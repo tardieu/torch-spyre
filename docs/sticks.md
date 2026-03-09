@@ -127,5 +127,7 @@ def analyze(t, var_ranges, indexer):
                 max_stride = t.stride(j)
                 it_dim_map[i] = j
                 relative_stride[i] = indexer(one) // max_stride
+                if indexer(one) % max_stride != 0:
+                    raise Unsupported
     return it_dim_map, relative_stride
 ```
