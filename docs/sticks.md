@@ -99,10 +99,20 @@ def d2h(t, d):
     return h
 ```
 
-## Ops
+## Stick Dimension and Tiling Assumptions
 
-An operation has:
-- a `var_ranges` array,
+We assume that `device_size[-1]` is always the number of stick elements for the
+tensor on-device dtype.
+
+We assume tensors such that either:
+- `len(dim_map)==rank+1` and the last dimension occurs twice in `dim_map`, or
+- `len(dim_map)==rank+2` and the last dimension occurs twice in `dim_map` and is
+  `None`.
+
+## Operations
+
+An operation that is computing on more than one element has:
+- a `var_ranges` array of integers greater than 1,
 - an `indexer` to access each argument tensor.
 
 An indexer is a function that takes a coordinate vector `v` of length
@@ -121,13 +131,18 @@ def analyze(t, var_ranges, indexer):
     for i in range(var_ranges):
         one = [0] * len(var_ranges)
         one[i] = 1
+        step = indexer(one)
+        if step == 0:
+            continue
+        # v[i] coefficient is not zero
         max_stride = None
+        # find host dim with size > 1 and max stride less than step
         for j in range(len(t.size)):
-            if indexer(one) >= t.stride(j) and (stride_match is None or t.stride(j) >= max_stride):
+            if t.size(j) > 1 and step >= t.stride(j) and (max_stride is None or t.stride(j) > max_stride):
                 max_stride = t.stride(j)
-                it_dim_map[i] = j
-                relative_stride[i] = indexer(one) // max_stride
-                if indexer(one) % max_stride != 0:
+                if step % max_stride != 0:
                     raise Unsupported
+                it_dim_map[i] = j
+                relative_stride[i] = step // max_stride
     return it_dim_map, relative_stride
 ```
