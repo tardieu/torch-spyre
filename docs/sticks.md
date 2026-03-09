@@ -41,7 +41,7 @@ Device offsets are in range `[0, prod(device_size))`.
 
 ## Coordinate Mapping
 
-The `dim_map` maps device dimensions to host dimensions. Each host dimensions
+The `dim_map` maps device dimensions to host dimensions. Each host dimension
 must occur at least once in `dim_map`. A `dim_map` element may be `None` to
 denote a synthetic dimension that does not map to a host dimension.
 
@@ -101,8 +101,8 @@ def d2h(t, d):
 
 ## Stick Dimension and Tiling Assumptions
 
-We assume that `device_size[-1]` is always the number of stick elements for the
-tensor on-device dtype.
+We assume that `device_size[-1]` is always the number of elements per 128 bytes
+for the tensor on-device dtype.
 
 We assume tensors such that either:
 - `len(dim_map)==rank+1` and the last dimension occurs twice in `dim_map`, or
