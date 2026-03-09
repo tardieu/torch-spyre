@@ -14,9 +14,10 @@ The `device_size` length is always greater than or equal to the `rank`.
 
 ## Strides
 
-Per-dimension host strides are not required to be decreasing or increasing.
+Per-dimension host strides are not required to be non-increasing or
+non-decreasing.
 
-Per-dimension device strides are implicit, decreasing, and derived from the
+Per-dimension device strides are implicit, non-increasing, and derived from the
 `device_size`. The `device_stride[i]` of device dimension `i` is
 `prod(device_size[i+1:])`.
 
@@ -67,7 +68,7 @@ def splits(t):
     return current_split, next_split
 ```
 
-The host element with coordinate vector `h` such that `0<h<size` corresponds to
+The host element with coordinate vector `h` such that `0<=h<size` corresponds to
 device element with coordinate vector `d` obtained as follows:
 ```python
 def h2d(t, h):
@@ -80,7 +81,7 @@ def h2d(t, h):
     return d
 ```
 
-The device element with coordinate vector `d` such that `0<d<device_size`
+The device element with coordinate vector `d` such that `0<=d<device_size`
 corresponds either to padding or a host element with coordinate vector `h`
 obtained as follows:
 ```python
@@ -107,28 +108,24 @@ An operation has:
 An indexer is a function that takes a coordinate vector `v` of length
 `len(var_ranges)` such that `0<=v<var_ranges` and returns a host offset.
 
-The indexer function is assumed be affine with the coefficient of each
-coordinate being a multiple of the largest per-dimension tensor stride less than
-or equal to the coefficient.
+The indexer function is assumed to be affine with each coefficient being a
+multiple of the largest per-dimension tensor stride less than or equal to the
+coefficient. For now, we assume `indexer(0)` is always `0`.
 
 From each argument tensor, we compute an `it_dim_map` mapping the operation
 dimensions to host dimensions:
 ```python
 def analyze(t, var_ranges, indexer):
-    zero_index = indexer([0] * len(var_ranges))
     it_dim_map = [None] * len(var_ranges)
     relative_stride = [None] * len(var_ranges)
     for i in range(var_ranges):
         one = [0] * len(var_ranges)
         one[i] = 1
-        delta = indexer(one) - zero_index
-        stride_match = None
+        max_stride = None
         for j in range(len(t.size)):
-            if delta >= t.stride(j) and (stride_match is None or t.stride(j) >= stride_match):
-                stride_match = t.stride(j)
+            if indexer(one) >= t.stride(j) and (stride_match is None or t.stride(j) >= max_stride):
+                max_stride = t.stride(j)
                 it_dim_map[i] = j
-                relative_stride[i] = delta // stride_match
-    return it_dim_map, relative_stride, zero_index
+                relative_stride[i] = indexer(one) // max_stride
+    return it_dim_map, relative_stride
 ```
-
-
