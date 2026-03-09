@@ -135,10 +135,10 @@ def analyze(t, var_ranges, indexer):
         if step == 0:
             continue
         # v[i] coefficient is not zero
-        max_stride = None
+        max_stride = 0
         # find host dim with size > 1 and max stride less than step
         for j in range(len(t.size)):
-            if t.size(j) > 1 and step >= t.stride(j) and (max_stride is None or t.stride(j) > max_stride):
+            if t.size(j) > 1 and step >= t.stride(j) and t.stride(j) > max_stride:
                 max_stride = t.stride(j)
                 if step % max_stride != 0:
                     raise Unsupported
