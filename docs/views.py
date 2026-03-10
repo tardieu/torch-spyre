@@ -93,8 +93,8 @@ class TensorArg:
                     continue
                 s = self.tensor.stride[j]
                 if s > step and s < limit:
-                    # var indexes into multiple host dimensions dim j has a
-                    # stride>=1 w.r.t. var i
+                    # var indexes into multiple host dimensions
+                    # dim j has a stride>=1 w.r.t. var i
                     it_dim_map[i].append((j, 1, s // step))
                 elif s <= step and s > max_stride_below:
                     # record stride as tentative max stride <= step
@@ -161,7 +161,6 @@ class TensorArg:
 
         # split device dimensions with multiple indexing subexpressions into
         # consecutive device dimensions, fix dim_map and it_device_dim_map
-        # accordingly
         fixed_device_size = []
         fixed_dim_map = []
         fixed_it_device_dim_map = [None] * count
