@@ -85,6 +85,7 @@ class TensorArg:
             step = self.indexer(one)
             if step == 0:
                 # var does not occur in indexer
+                it_dim_map[i] = []
                 continue
             limit = step * self.var_ranges[i]  # upper limit offset for this var
             max_stride_below = 0
@@ -150,6 +151,9 @@ class TensorArg:
         count = 0
         tmp = [[] for _ in range(len(self.tensor.device_size))]
         for i in range(len(self.tensor.device_size)):
+            if self.tensor.device_size[i] == 1:
+                tmp[i].append((1, i, 1, self.tensor.dim_map[i]))
+                count += 1
             for k in range(len(self.it_device_dim_map)):
                 for j, num, den in self.it_device_dim_map[k]:
                     if j != i:
@@ -182,6 +186,14 @@ class TensorArg:
             exprs[i] += f"p{j}//{den}"  # {self.fixed_device_size[i]}"
         return exprs
 
+    def print(self):
+        print("it_host_dim_map        ", self.format_it_host_dim_map())
+        print("it_device_dim_map      ", self.format_it_device_dim_map())
+        print("fixed_device_size      ", self.fixed_device_size)
+        print("fixed_dim_map          ", self.fixed_dim_map)
+        print("fixed_it_device_dim_map", self.format_fixed_it_device_dim_map())
+        print()
+
 
 print("t1: B, S, E viewed as B, H, S, E/H")
 
@@ -202,14 +214,7 @@ a1 = TensorArg(
 )
 """)
 
-print("it_host_dim_map        ", a1.format_it_host_dim_map())
-print("it_device_dim_map      ", a1.format_it_device_dim_map())
-print("fixed_device_size      ", a1.fixed_device_size)
-print("fixed_dim_map          ", a1.fixed_dim_map)
-print("fixed_it_device_dim_map", a1.format_fixed_it_device_dim_map())
-
-print()
-
+a1.print()
 
 print("t2: B, S, E viewed as B*S, E")
 
@@ -221,8 +226,38 @@ t2 = Tensor([2, 256, 4096], [1048576, 4096, 1], [256, 64, 2, 64], [1, 2, 0, 2])
 a2 = TensorArg(t2, [512, 4096], lambda p: 4096 * p[0] + p[1])
 """)
 
-print("it_host_dim_map        ", a2.format_it_host_dim_map())
-print("it_device_dim_map      ", a2.format_it_device_dim_map())
-print("fixed_device_size      ", a2.fixed_device_size)
-print("fixed_dim_map          ", a2.fixed_dim_map)
-print("fixed_it_device_dim_map", a2.format_fixed_it_device_dim_map())
+a2.print()
+
+
+t3 = Tensor([256, 512], [512, 1], [8, 256, 64], [1, 0, 1])
+a3 = TensorArg(t3, [512, 256], lambda p: p[0] + 512 * p[1])
+
+a3.print()
+
+t4 = Tensor([256, 512], [512, 1], [8, 256, 64], [1, 0, 1])
+a4 = TensorArg(t4, [256, 512], lambda p: 512 * p[0] + p[1])
+
+a4.print()
+
+
+t5 = Tensor([1, 512], [512, 1], [8, 1, 64], [1, 0, 1])
+a5 = TensorArg(t5, [1, 512], lambda p: 512 * p[0] + p[1])
+
+a5.print()
+
+
+t6 = Tensor([3, 1, 256], [256, 256, 1], [1, 4, 3, 64], [1, 2, 0, 2])
+a6 = TensorArg(t6, [3, 128, 256], lambda p: 256 * p[0] + p[2])
+
+a6.print()
+
+
+t7 = Tensor([3, 256, 128], [32768, 128, 1], [256, 2, 3, 64], [1, 2, 0, 2])
+a7 = TensorArg(t7, [3, 128, 256], lambda p: 32768 * p[0] + p[1] + 128 * p[2])
+
+a7.print()
+
+t8 = Tensor([1, 1, 512], [512, 512, 1], [1, 8, 1, 64], [1, 2, 0, 2])
+a8 = TensorArg(t8, [1, 1, 512], lambda p: p[2])
+
+a8.print()
