@@ -78,15 +78,14 @@ class TensorArg:
 
     def compute_it_host_dim_map(self):
         """convert indexer into a map from var_ranges to host coordinates"""
-        it_dim_map = [[()] for _ in range(len(self.var_ranges))]
+        it_dim_map = [[] for _ in range(len(self.var_ranges))]
         for i in range(len(self.var_ranges)):
             one = [0] * len(self.var_ranges)
             one[i] = 1
             step = self.indexer(one)
-            if step == 0:
-                # var does not occur in indexer
-                it_dim_map[i] = []
-                continue
+            if step == 0 or self.var_ranges[i] == 1:
+                continue  # var does not occur in indexer or has range 1
+            it_dim_map[i] = [()]  # expect at least one match
             limit = step * self.var_ranges[i]  # upper limit offset for this var
             max_stride_below = 0
             for j in range(len(self.tensor.size)):
@@ -118,8 +117,7 @@ class TensorArg:
             for j, num, den in self.it_host_dim_map[i]:
                 for k in range(len(self.tensor.dim_map)):
                     if j != self.tensor.dim_map[k]:
-                        # device dim k does not map to host dim j
-                        continue
+                        continue  # device dim k does not map to host dim j
                     if (
                         self.var_ranges[i] * num // den > self.tensor.split[k]
                         and num // den
@@ -146,44 +144,41 @@ class TensorArg:
         return exprs
 
     def fix_device_layout(self):
-        # order indexing subexpressions for each coordinate in decreasing stride
-        # order
-        count = 0
-        tmp = [[] for _ in range(len(self.tensor.device_size))]
+        # order indexing terms for each coordinate in decreasing stride order
+        terms = [[] for _ in range(len(self.tensor.device_size))]
         for i in range(len(self.tensor.device_size)):
             if self.tensor.device_size[i] == 1:
-                tmp[i].append((1, i, 1, self.tensor.dim_map[i]))
-                count += 1
+                terms[i].append((1, i, None, None))
+                continue
             for k in range(len(self.it_device_dim_map)):
                 for j, num, den in self.it_device_dim_map[k]:
                     if j != i:
                         continue
-                    tmp[i].append((num, j, den, k))
-                    count += 1
-            tmp[i].sort()
-            tmp[i].reverse()
+                    terms[i].append((num, j, den, k))
+            terms[i].sort()
+            terms[i].reverse()
 
-        # split device dimensions with multiple indexing subexpressions into
+        # split device dimensions with multiple indexing terms into
         # consecutive device dimensions, fix dim_map and it_device_dim_map
         fixed_device_size = []
         fixed_dim_map = []
-        fixed_it_device_dim_map = [None] * count
-        x = 0
-        for i in range(len(tmp)):
+        fixed_it_device_dim_map = []
+        for i in range(len(terms)):
             current = 1
-            for num, j, den, k in tmp[i]:
+            for num, j, den, k in terms[i]:
                 fixed_device_size.append(self.tensor.device_size[i] // num // current)
                 current *= self.tensor.device_size[i] // num
                 fixed_dim_map.append(self.tensor.dim_map[i])
-                fixed_it_device_dim_map[x] = (k, den)
-                x += 1
+                fixed_it_device_dim_map.append((k, den))
         return fixed_device_size, fixed_dim_map, fixed_it_device_dim_map
 
     def format_fixed_it_device_dim_map(self):
-        exprs = ["" for _ in range(len(self.fixed_device_size))]
-        for i in range(len(self.fixed_it_device_dim_map)):
-            j, den = self.fixed_it_device_dim_map[i]
-            exprs[i] += f"p{j}//{den}"  # {self.fixed_device_size[i]}"
+        exprs = []
+        for j, den in self.fixed_it_device_dim_map:
+            if j is None:
+                exprs.append("0")
+            else:
+                exprs.append(f"p{j}//{den}")  # {self.fixed_device_size[i]}"
         return exprs
 
     def print(self):
