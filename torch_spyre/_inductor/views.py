@@ -14,22 +14,32 @@
 
 # Helper methods to handle views
 
+import sympy
+from typing import Sequence
 
-def compute_relative_stride(rank, device_size, dim_map):
+
+def compute_relative_stride(
+    rank: int, device_size: Sequence[int], dim_map: Sequence[int]
+) -> list[sympy.Expr]:
     """
     Compute strides of device dimensions with respect to host dimensions
     """
     acc = [1] * rank
-    rel_stride = [None] * len(dim_map)
+    rel_stride = [-1] * len(dim_map)
     for device_dim in range(len(dim_map) - 1, -1, -1):
         dim = dim_map[device_dim]
-        if dim is not None:
+        if dim != -1:
             rel_stride[device_dim] = acc[dim]
             acc[dim] *= device_size[device_dim]
     return rel_stride
 
 
-def compute_coordinates(size, stride, var_ranges, index):
+def compute_coordinates(
+    size: Sequence[sympy.Expr],
+    stride: Sequence[sympy.Expr],
+    var_ranges: dict[sympy.Symbol, sympy.Expr],
+    index: sympy.Expr,
+) -> list[sympy.Expr]:
     """
     Derive an array of coordinate expressions into a tensor from an index
     """
@@ -42,7 +52,7 @@ def compute_coordinates(size, stride, var_ranges, index):
         step = term.subs(var, 1)
         limit = term.subs(var, var_ranges[var])
         primary_stride = 0
-        primary_dim = None
+        primary_dim = -1
         for dim in range(len(size)):
             if size[dim] == 1:
                 continue
@@ -56,7 +66,14 @@ def compute_coordinates(size, stride, var_ranges, index):
     return coordinates
 
 
-def compute_device_coordinates(size, stride, device_size, dim_map, var_ranges, index):
+def compute_device_coordinates(
+    size: Sequence[sympy.Expr],
+    stride: Sequence[sympy.Expr],
+    device_size: Sequence[sympy.Expr],
+    dim_map: Sequence[int],
+    var_ranges: dict[sympy.Symbol, sympy.Expr],
+    index: sympy.Expr,
+) -> list[sympy.Expr]:
     """
     Derive an array of coordinate expressions into a device tensor from an index
     """
@@ -64,6 +81,8 @@ def compute_device_coordinates(size, stride, device_size, dim_map, var_ranges, i
     host_coordinates = compute_coordinates(size, stride, var_ranges, index)
     coordinates = [0] * len(device_size)
     for dim in range(len(device_size)):
+        if dim_map[dim] == -1:
+            continue
         expr = host_coordinates[dim_map[dim]]
         vars = expr.free_symbols
         for var in vars:
