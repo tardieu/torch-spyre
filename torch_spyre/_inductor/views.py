@@ -19,7 +19,7 @@ from typing import Sequence
 
 
 def compute_relative_stride(
-    rank: int, device_size: Sequence[int], dim_map: Sequence[int]
+    rank: int, device_size: Sequence[sympy.Expr], dim_map: Sequence[int]
 ) -> list[sympy.Expr]:
     """
     Compute strides of device dimensions with respect to host dimensions
