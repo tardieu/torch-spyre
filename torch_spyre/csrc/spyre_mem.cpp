@@ -124,31 +124,31 @@ auto get_device_stride_info(c10::IntArrayRef sizes, c10::IntArrayRef strides,
   auto cpu_strides = strides.vec();
 
   // sparse tensors need no padding of the stick dimension
-  bool sparse = stl.dim_map.back() == -1;
+  bool sparse = stl.dim_map().back() == -1;
   bool requires_padding =
-      !sparse && cpu_shape[stl.dim_map.back()] % stick_size != 0;
+      !sparse && cpu_shape[stl.dim_map().back()] % stick_size != 0;
   bool size_less_than_stick =
-      !sparse && cpu_shape[stl.dim_map.back()] < stick_size;
+      !sparse && cpu_shape[stl.dim_map().back()] < stick_size;
 
   stride_info.size_ = device_sizes;
 
   if (size_less_than_stick) {
-    stride_info.size_[0] = cpu_shape[stl.dim_map.back()];
+    stride_info.size_[0] = cpu_shape[stl.dim_map().back()];
   }
   stride_info.stride_src_.push_back(1);
   stride_info.stride_dst_.push_back(1);
 
-  for (int i = 1; i < stl.dim_map.size(); i++) {
-    auto& dim = stl.dim_map[(stl.dim_map.size() - 1) - i];
+  for (int i = 1; i < stl.dim_map().size(); i++) {
+    auto& dim = stl.dim_map()[(stl.dim_map().size() - 1) - i];
     auto cpu_stride =
-        get_dim_cpu_stride(dim, stick_size, stl.dim_map, cpu_strides);
+        get_dim_cpu_stride(dim, stick_size, stl.dim_map(), cpu_strides);
     auto dev_stride = get_dim_device_stride(
         dim, stick_size, device_sizes,
         host2device ? stride_info.stride_dst_ : stride_info.stride_src_);
 
     stride_info.stride_src_.push_back(host2device ? cpu_stride : dev_stride);
     stride_info.stride_dst_.push_back(host2device ? dev_stride : cpu_stride);
-    if (dim == stl.dim_map.back() && requires_padding &&
+    if (dim == stl.dim_map().back() && requires_padding &&
         !size_less_than_stick) {  // stick_dim
       stride_info.size_[i] -= 1;
     }
@@ -199,11 +199,11 @@ auto get_device_stride_infos(c10::IntArrayRef sizes, c10::IntArrayRef strides,
   int stick_size = stl.elems_per_stick();
 
   // sparse tensors need no padding of the stick dimension
-  bool sparse = stl.dim_map.back() == -1;
+  bool sparse = stl.dim_map().back() == -1;
   bool requires_padding =
-      !sparse && cpu_shape[stl.dim_map.back()] % stick_size != 0;
+      !sparse && cpu_shape[stl.dim_map().back()] % stick_size != 0;
   bool size_less_than_stick =
-      !sparse && cpu_shape[stl.dim_map.back()] < stick_size;
+      !sparse && cpu_shape[stl.dim_map().back()] < stick_size;
   DataConversionStrideInfo stride_info;
 
   stride_info = get_device_stride_info(sizes, strides, stl, stick_size,
@@ -220,14 +220,14 @@ auto get_device_stride_infos(c10::IntArrayRef sizes, c10::IntArrayRef strides,
     auto cpu_offset = stick_size;
 
     // Update host and device offsets
-    for (int i = 1; i < stl.dim_map.size(); i++) {
-      auto& dim = stl.dim_map[(stl.dim_map.size() - 1) - i];
+    for (int i = 1; i < stl.dim_map().size(); i++) {
+      auto& dim = stl.dim_map()[(stl.dim_map().size() - 1) - i];
       dev_offset *= pad_stride_info.size_[i];
-      if (dim == stl.dim_map.back()) {
+      if (dim == stl.dim_map().back()) {
         cpu_offset *= pad_stride_info.size_[i];
         // Stick dimension is the size of the remainder of cpu_shape/stick_size
         pad_stride_info.size_[i] = 1;
-        pad_stride_info.size_[0] = cpu_shape[stl.dim_map.back()] % stick_size;
+        pad_stride_info.size_[0] = cpu_shape[stl.dim_map().back()] % stick_size;
         break;
       }
     }
