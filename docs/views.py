@@ -8,51 +8,46 @@ class Tensor:
         self.device_size = device_size
         self.stride_map = stride_map
         self.device_stride = [0] * len(self.device_size)  # to be computed
-        self.relative_stride = [0] * len(self.device_size)  # to be computed
-        self.dim_map = [-1] * len(self.device_size)  # to be computed
+        self.unpadded_size = [0] * len(self.size)  # to be computed
 
         # compute device_stride
         acc = 1
-        for i in range(len(self.device_size) - 1, -1, -1):
-            if self.stride_map[i] != 0:
-                self.device_stride[i] = acc
-                acc = acc * self.device_size[i]
+        for dim in range(len(self.device_size) - 1, -1, -1):
+            if self.stride_map[dim] != 0:
+                self.device_stride[dim] = acc
+                acc = acc * self.device_size[dim]
 
-        # compute relative_stride and dim_map
-        acc = [0] * len(self.device_size)
-        for i, hst in enumerate(self.stride):
-            if self.size[i] == 1:
-                continue
-            for j, dst in enumerate(self.stride_map):
-                if self.device_size[j] == 1:
-                    continue
-                if hst > acc[j] and hst <= dst:
-                    acc[j] = hst
-                    self.dim_map[j] = i
-                    self.relative_stride[j] = dst // hst
+        # compute unpadded_size
+        for dim in range(len(self.size)):
+            top = max(self.stride) * self.size[dim]
+            for st in stride:
+                if st > stride[dim] and st < top:
+                    top = st
+            self.unpadded_size[dim] = top // self.stride[dim]
 
     def h2d(self, h):
         """map host coordinates to device coordinates"""
-        for i, c in enumerate(h):
-            if c < 0 or c >= self.size[i]:
+        offset = 0
+        for dim, c in enumerate(h):
+            if c < 0 or c >= self.size[dim]:
                 raise IndexError
-        d = [0] * len(self.dim_map)
-        for j, i in enumerate(self.dim_map):
-            if i != -1:
-                d[j] = h[i] // self.relative_stride[j] % self.device_size[j]
+            offset += c * self.stride[dim]
+        d = [0] * len(self.device_size)
+        for dim in range(len(self.device_size)):
+            if self.stride_map[dim] > 0:
+                d[dim] = offset // self.stride_map[dim] % self.device_size[dim]
         return d
 
     def d2h(self, d):
         """map device coordinates to host coordinates"""
-        for i, c in enumerate(d):
-            if c < 0 or c >= self.device_size[i]:
+        offset = 0
+        for dim, c in enumerate(d):
+            if c < 0 or c >= self.device_size[dim]:
                 raise IndexError
+            offset += c * max(0, self.stride_map[dim])
         h = [0] * len(self.size)
-        for j, i in enumerate(self.dim_map):
-            if i != -1:
-                h[i] += d[j] * self.relative_stride[j]
-                if h[i] > self.size[i]:
-                    raise IndexError
+        for dim in range(len(self.size)):
+            h[dim] += offset // self.stride[dim] % self.unpadded_size[dim]
         return h
 
     def compute_coordinates(self, var_ranges, index):
@@ -76,29 +71,39 @@ class Tensor:
                 elif st <= step and st > primary_stride:
                     primary_stride = st
                     primary_dim = dim
-            coordinates[primary_dim] += var * step // primary_stride
+            coordinates[primary_dim] += (
+                var * step // primary_stride  # % self.unpadded_size[primary_dim]
+            )
         return coordinates
 
     def compute_device_coordinates(self, var_ranges, index):
         """derive an array of coordinate expressions into a device tensor from an index"""
-        host_coordinates = self.compute_coordinates(var_ranges, index)
         coordinates = [sympy.S.Zero] * len(self.device_size)
-        for dim in range(len(self.device_size)):
-            if self.dim_map[dim] == -1:
+        vars = index.free_symbols
+        for var in vars:
+            if var_ranges[var] <= 1:
                 continue
-            expr = host_coordinates[self.dim_map[dim]]
-            vars = expr.free_symbols
-            for var in vars:
-                term = expr.subs({v: 0 for v in vars - {var}})
-                step = term.subs(var, 1)
-                limit = term.subs(var, var_ranges[var])
-                if (
-                    limit > self.relative_stride[dim]
-                    and step < self.relative_stride[dim] * self.device_size[dim]
-                ):
-                    coordinates[dim] += term // self.relative_stride[dim]
+            term = index.subs({v: 0 for v in vars - {var}})
+            step = term.subs(var, 1)
+            limit = term.subs(var, var_ranges[var])
+            primary_stride = 0
+            primary_dim = -1
+            for dim in range(len(self.device_size)):
+                if self.device_size[dim] == 1:
+                    continue
+                st = self.stride_map[dim]
+                if st > step and st < limit:
+                    coordinates[dim] += var * step // st
+                elif st <= step and st > primary_stride:
+                    primary_stride = st
+                    primary_dim = dim
+            coordinates[primary_dim] += (
+                var * step // primary_stride  # % self.device_size[primary_dim]
+            )
         return coordinates
 
+
+print(vars(Tensor([512, 256], [384, 1], [196608], [1])))
 
 print(vars(Tensor([512], [1], [512], [1])))
 print(vars(Tensor([512], [1], [512], [1])))
@@ -113,7 +118,74 @@ print(vars(Tensor([4, 64], [64, 1], [1, 4, 64], [64, 64, 1])))
 print(vars(Tensor([4, 1], [1, 1], [1, 4, 64], [1, 1, -1])))
 print(vars(Tensor([4], [1], [64], [1])))
 print(vars(Tensor([4, 3], [3, 1], [1, 4, 64], [1, 3, 1])))
+print(vars(Tensor([4, 128], [128, 1], [2, 4, 64], [64, 128, 1])))
 
 print(Tensor([4, 1], [1, 1], [1, 4, 64], [1, 1, -1]).d2h([0, 2, 0]))
 print(Tensor([4, 3], [3, 1], [1, 4, 64], [1, 3, 1]).d2h([0, 2, 3]))
 print(Tensor([4, 128], [128, 1], [2, 4, 64], [64, 128, 1]).d2h([1, 3, 7]))
+
+print(Tensor([512, 256], [384, 1], [196608], [1]).d2h([255]))
+
+p0, p1, p2, p3 = sympy.symbols("p0 p1 p2 p3", integer=True)
+
+print(
+    Tensor(
+        [2, 256, 4096], [1048576, 4096, 1], [256, 64, 2, 64], [4096, 64, 1048576, 1]
+    ).compute_coordinates(
+        {p0: 2, p1: 32, p2: 256, p3: 128},
+        1048576 * p0 + 128 * p1 + 4096 * p2 + p3,
+    )
+)
+
+print(
+    Tensor(
+        [2, 256, 4096], [1048576, 4096, 1], [256, 64, 2, 64], [4096, 64, 1048576, 1]
+    ).compute_device_coordinates(
+        {p0: 2, p1: 32, p2: 256, p3: 128},
+        1048576 * p0 + 128 * p1 + 4096 * p2 + p3,
+    )
+)
+
+
+print(
+    Tensor(
+        [2, 256, 4096], [1048576, 4096, 1], [256, 64, 2, 64], [4096, 64, 1048576, 1]
+    ).compute_coordinates(
+        {p0: 512, p1: 4096},
+        4096 * p0 + p1,
+    )
+)
+
+print(
+    Tensor(
+        [2, 256, 4096], [1048576, 4096, 1], [256, 64, 2, 64], [4096, 64, 1048576, 1]
+    ).compute_device_coordinates(
+        {p0: 512, p1: 4096},
+        4096 * p0 + p1,
+    )
+)
+
+print(
+    Tensor(
+        [256, 4096], [4096, 1], [64, 256, 64], [64, 4096, 1]
+    ).compute_device_coordinates(
+        {p0: 256, p1: 4096, p2: 1024},
+        4096 * p0 + p1,
+    )
+)
+
+print(
+    Tensor(
+        [1024, 4096], [4096, 1], [64, 1024, 64], [64, 4096, 1]
+    ).compute_device_coordinates(
+        {p0: 256, p1: 4096, p2: 1024},
+        p1 + 4096 * p2,
+    )
+)
+
+print(
+    Tensor([4, 1], [1, 1], [1, 4, 64], [-1, 1, -1]).compute_device_coordinates(
+        {p0: 4},
+        p0,
+    )
+)
