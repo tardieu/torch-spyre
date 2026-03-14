@@ -45,9 +45,9 @@ class SpyreTensorLayout {
    * vector. Stick dimensions will appear twice; non-stick dimensions will
    * appear once.
    */
-  std::vector<int32_t> dim_map_data;
+  std::vector<int32_t> stride_map;
 
-  const std::vector<int32_t>& dim_map();
+  std::vector<int32_t> dim_map();
 
   DataFormats device_dtype;
 
@@ -103,7 +103,7 @@ class SpyreTensorLayout {
 
   bool operator==(const SpyreTensorLayout& other) const {
     return this->device_size == other.device_size &&
-           this->dim_map_data == other.dim_map_data &&
+           this->stride_map == other.stride_map &&
            this->device_dtype == other.device_dtype;
   }
 };

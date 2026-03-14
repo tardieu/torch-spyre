@@ -79,15 +79,25 @@ auto get_generic_stick_layout(std::vector<int32_t> host_dim_order)
   return dim_map;
 }
 
-const std::vector<int32_t>& SpyreTensorLayout::dim_map() {
-  return dim_map_data;
+static std::vector<int32_t> dim_map_to_stride_map(
+    const std::vector<int32_t>& dim_map) {
+  return dim_map;
+}
+
+static std::vector<int32_t> stride_map_to_dim_map(
+    const std::vector<int32_t>& stride_map) {
+  return stride_map;
+}
+
+std::vector<int32_t> SpyreTensorLayout::dim_map() {
+  return stride_map_to_dim_map(this->stride_map);
 }
 
 SpyreTensorLayout::SpyreTensorLayout(std::vector<int64_t> device_size,
                                      std::vector<int32_t> dim_map,
                                      DataFormats device_dtype)
     : device_size(device_size),
-      dim_map_data(dim_map),
+      stride_map(dim_map_to_stride_map(dim_map)),
       device_dtype(device_dtype) {}
 
 std::optional<int32_t> SpyreTensorLayout::host_stick_dim() {
@@ -125,16 +135,14 @@ void SpyreTensorLayout::init(std::vector<int64_t> host_size,
   if (host_size.size() == 0) {
     // Degenerate case of 0-dimension tensor (ie, a scalar)
     this->device_size.resize(2);
-    this->dim_map_data.resize(2);
     this->device_size[0] = 1;
     this->device_size[1] = this->elems_per_stick();
-    this->dim_map_data[0] = -1;
-    this->dim_map_data[1] = -1;
+    this->stride_map = dim_map_to_stride_map({-1, -1});
     return;
   }
 
   // Computing tiling
-  this->dim_map_data = spyre::get_generic_stick_layout(dim_order);
+  this->stride_map = dim_map_to_stride_map(spyre::get_generic_stick_layout(dim_order));
   this->device_size.resize(this->dim_map().size());
   bool sparse = dim_order.back() == -1;
   auto elems_in_stick = sparse ? 1 : this->elems_per_stick();
@@ -166,9 +174,10 @@ std::string SpyreTensorLayout::toString() const {
     }
   }
   ss << "], dim_map =[";
-  for (size_t i = 0; i < this->dim_map_data.size(); i++) {
-    ss << this->dim_map_data[i];
-    if (i < this->dim_map_data.size() - 1) {
+  auto dm = stride_map_to_dim_map(this->stride_map);
+  for (size_t i = 0; i < dm.size(); i++) {
+    ss << dm[i];
+    if (i < dm.size() - 1) {
       ss << ", ";
     }
   }
