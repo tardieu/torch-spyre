@@ -79,6 +79,13 @@ auto get_generic_stick_layout(std::vector<int32_t> host_dim_order)
   return dim_map;
 }
 
+SpyreTensorLayout::SpyreTensorLayout(std::vector<int64_t> device_size,
+                                     std::vector<int32_t> dim_map,
+                                     DataFormats device_dtype)
+    : device_size(device_size),
+      dim_map_data(dim_map),
+      device_dtype(device_dtype) {}
+
 std::optional<int32_t> SpyreTensorLayout::host_stick_dim() {
   int32_t stick_dim = this->dim_map().back();
   if (stick_dim == -1) {

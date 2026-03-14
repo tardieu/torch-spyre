@@ -82,10 +82,7 @@ class SpyreTensorLayout {
    * that all device layout invariants are satisfied.
    */
   SpyreTensorLayout(std::vector<int64_t> device_size,
-                    std::vector<int32_t> dim_map, DataFormats device_dtype)
-      : device_size(device_size),
-        dim_map_data(dim_map),
-        device_dtype(device_dtype) {}
+                    std::vector<int32_t> dim_map, DataFormats device_dtype);
 
   void init(std::vector<int64_t> host_size, c10::ScalarType dtype);
 
