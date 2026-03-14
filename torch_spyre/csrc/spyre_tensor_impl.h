@@ -47,7 +47,7 @@ class SpyreTensorLayout {
    */
   std::vector<int32_t> dim_map_data;
 
-  const std::vector<int32_t>& dim_map() const { return dim_map_data; }
+  const std::vector<int32_t>& dim_map();
 
   DataFormats device_dtype;
 
@@ -103,7 +103,7 @@ class SpyreTensorLayout {
 
   bool operator==(const SpyreTensorLayout& other) const {
     return this->device_size == other.device_size &&
-           this->dim_map() == other.dim_map() &&
+           this->dim_map_data == other.dim_map_data &&
            this->device_dtype == other.device_dtype;
   }
 };
