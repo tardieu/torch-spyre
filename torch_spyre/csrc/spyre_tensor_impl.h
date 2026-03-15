@@ -47,7 +47,8 @@ class SpyreTensorLayout {
    */
   std::vector<int32_t> stride_map;
 
-  std::vector<int32_t> dim_map() const;
+  std::vector<int32_t> dim_map(std::vector<int64_t> host_size,
+                               std::vector<int64_t> host_stride = {}) const;
 
   DataFormats device_dtype;
 
@@ -82,7 +83,7 @@ class SpyreTensorLayout {
    * that all device layout invariants are satisfied.
    */
   SpyreTensorLayout(std::vector<int64_t> device_size,
-                    std::vector<int32_t> dim_map, DataFormats device_dtype);
+                    std::vector<int32_t> stride_map, DataFormats device_dtype);
 
   void init(std::vector<int64_t> host_size, c10::ScalarType dtype);
 
@@ -95,7 +96,8 @@ class SpyreTensorLayout {
    * Return the host_dim that is the stick dimension; sparse tensors return
    * nullopt.
    */
-  std::optional<int32_t> host_stick_dim();
+  std::optional<int32_t> host_stick_dim(std::vector<int64_t> host_size = {},
+                                        std::vector<int64_t> host_stride = {});
 
   int64_t elems_per_stick() {
     return spyre::elems_per_stick(this->device_dtype);

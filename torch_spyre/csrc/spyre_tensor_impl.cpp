@@ -80,28 +80,69 @@ auto get_generic_stick_layout(std::vector<int32_t> host_dim_order)
 }
 
 static std::vector<int32_t> dim_map_to_stride_map(
-    const std::vector<int32_t>& dim_map) {
+    const std::vector<int32_t>& dim_map,
+    const std::vector<int64_t>& host_size = {},
+    const std::vector<int64_t>& host_stride = {}) {
   return dim_map;
 }
 
+static std::vector<int64_t> compute_host_stride(
+    const std::vector<int64_t>& host_size) {
+  // Compute contiguous (row-major) strides from host_size.
+  // This corresponds to dim_order = [0, 1, ..., n-1] as in overload 1.
+  int n = static_cast<int>(host_size.size());
+  std::vector<int64_t> host_stride(n);
+  int64_t stride = 1;
+  for (int i = n - 1; i >= 0; --i) {
+    host_stride[i] = stride;
+    stride *= host_size[i];
+  }
+  return host_stride;
+}
+
+static std::vector<int64_t> compute_host_stride(
+    const std::vector<int64_t>& host_size,
+    const std::vector<int32_t>& dim_order) {
+  // Compute strides from host_size given dim_order (decreasing stride order).
+  // dim_order[0] has the largest stride, dim_order[n-1] has stride 1.
+  int n = static_cast<int>(dim_order.size());
+  std::vector<int64_t> host_stride(host_size.size());
+  int64_t stride = 1;
+  for (int i = n - 1; i >= 0; --i) {
+    int32_t dim = dim_order[i];
+    if (dim >= 0) {
+      host_stride[dim] = stride;
+      stride *= host_size[dim];
+    }
+  }
+  return host_stride;
+}
+
 static std::vector<int32_t> stride_map_to_dim_map(
-    const std::vector<int32_t>& stride_map) {
+    const std::vector<int32_t>& stride_map,
+    const std::vector<int64_t>& host_size = {},
+    const std::vector<int64_t>& host_stride = {}) {
+  const std::vector<int64_t> effective_stride =
+      (!host_size.empty() && host_stride.empty()) ? compute_host_stride(host_size)
+                                                  : host_stride;
   return stride_map;
 }
 
-std::vector<int32_t> SpyreTensorLayout::dim_map() const {
-  return stride_map_to_dim_map(this->stride_map);
+std::vector<int32_t> SpyreTensorLayout::dim_map(
+    std::vector<int64_t> host_size, std::vector<int64_t> host_stride) const {
+  return stride_map_to_dim_map(this->stride_map, host_size, host_stride);
 }
 
 SpyreTensorLayout::SpyreTensorLayout(std::vector<int64_t> device_size,
-                                     std::vector<int32_t> dim_map,
+                                     std::vector<int32_t> stride_map,
                                      DataFormats device_dtype)
     : device_size(device_size),
-      stride_map(dim_map_to_stride_map(dim_map)),
+      stride_map(stride_map),
       device_dtype(device_dtype) {}
 
-std::optional<int32_t> SpyreTensorLayout::host_stick_dim() {
-  int32_t stick_dim = this->dim_map().back();
+std::optional<int32_t> SpyreTensorLayout::host_stick_dim(
+    std::vector<int64_t> host_size, std::vector<int64_t> host_stride) {
+  int32_t stick_dim = this->dim_map(host_size, host_stride).back();
   if (stick_dim == -1) {
     return std::nullopt;
   } else {
@@ -137,13 +178,18 @@ void SpyreTensorLayout::init(std::vector<int64_t> host_size,
     this->device_size.resize(2);
     this->device_size[0] = 1;
     this->device_size[1] = this->elems_per_stick();
-    this->stride_map = dim_map_to_stride_map({-1, -1});
+    this->stride_map.resize(2);
+    this->stride_map[0] = -1;
+    this->stride_map[1] = -1;
     return;
   }
 
   // Computing tiling
-  this->stride_map = dim_map_to_stride_map(spyre::get_generic_stick_layout(dim_order));
-  auto dm = this->dim_map();
+  auto generic_layout = spyre::get_generic_stick_layout(dim_order);
+  this->stride_map = dim_map_to_stride_map(generic_layout, host_size,
+                                            compute_host_stride(host_size,
+                                                                dim_order));
+  auto dm = generic_layout;
   this->device_size.resize(dm.size());
   bool sparse = dim_order.back() == -1;
   auto elems_in_stick = sparse ? 1 : this->elems_per_stick();
@@ -174,11 +220,10 @@ std::string SpyreTensorLayout::toString() const {
       ss << ", ";
     }
   }
-  ss << "], dim_map =[";
-  auto dm = stride_map_to_dim_map(this->stride_map);
-  for (size_t i = 0; i < dm.size(); i++) {
-    ss << dm[i];
-    if (i < dm.size() - 1) {
+  ss << "], stride_map=[";
+  for (size_t i = 0; i < this->stride_map.size(); i++) {
+    ss << this->stride_map[i];
+    if (i < this->stride_map.size() - 1) {
       ss << ", ";
     }
   }

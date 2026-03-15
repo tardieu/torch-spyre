@@ -84,7 +84,7 @@ def device_coordinates(layout: FixedTiledLayout, dep: MemoryDep) -> list[sympy.E
         layout.size,
         layout.stride,
         layout.device_layout.device_size,
-        layout.device_layout.dim_map(),
+        layout.device_layout.dim_map(list(layout.size), list(layout.stride)),
         dep.ranges,
         dep.index,
     )

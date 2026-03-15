@@ -133,7 +133,9 @@ class DimInfos:
     #   - Order is the order of the dimensions as they appear in the device tensor,  followed
     #     by any remaining dimensions not in the tensor
     def get_tensor_op_index_order(self, tensor):
-        dev_dim_order = tensor["device_layout"].dim_map()[::-1][1:]
+        dev_dim_order = tensor["device_layout"].dim_map(
+            tensor["host_size"], tensor["host_stride"]
+        )[::-1][1:]
         it_dim_map = tensor["it_dim_map"]
         tensor_op_dims = [it_dim_map.index(i) for i in dev_dim_order if i in it_dim_map]
         remaining_op_dims = [i for i in self.dim_indices if i not in tensor_op_dims]
@@ -171,7 +173,7 @@ class DimInfos:
     def get_tensor_layout_order(self, tensor):
         dl = tensor["device_layout"]
         it_dim_map = tensor["it_dim_map"]
-        dev_dim_order = dl.dim_map()[::-1][1:]
+        dev_dim_order = dl.dim_map(tensor["host_size"], tensor["host_stride"])[::-1][1:]
         return [self.rows["label"][it_dim_map.index(dmv)] for dmv in dev_dim_order]
 
     # Returns dim infos for dimensions of the tensor,
@@ -185,7 +187,9 @@ class DimInfos:
 
     def get_tensor_stick_dim_labels(self, tensor):
         dl = tensor["device_layout"]
-        idx = tensor["it_dim_map"].index(dl.host_stick_dim())
+        idx = tensor["it_dim_map"].index(
+            dl.host_stick_dim(tensor["host_size"], tensor["host_stride"])
+        )
         return [self.rows["label"][idx]]
 
 
@@ -195,8 +199,8 @@ def get_device_size(op_dim, tensor):
     dl = tensor["device_layout"]
     scale = tensor["it_dim_map"][op_dim]
     assert scale >= 0, "Scale value should be non-negative for tensor provided"
-    size = dl.device_size[dl.dim_map().index(scale)]
-    if scale == dl.host_stick_dim():
+    size = dl.device_size[dl.dim_map(tensor["host_size"], tensor["host_stride"]).index(scale)]
+    if scale == dl.host_stick_dim(tensor["host_size"], tensor["host_stride"]):
         size *= dl.elems_per_stick()
     return size
 
@@ -440,7 +444,9 @@ def create_padding_mask_info(
     coordinateMasking = {}
     maskingConstId = -1
     dl = tensor["device_layout"]
-    stick_reduction = reduction and dl.host_stick_dim() is None
+    stick_reduction = reduction and dl.host_stick_dim(
+        tensor["host_size"], tensor["host_stride"]
+    ) is None
 
     if stick_reduction:
         # Coordinate masking required for stick reductions
@@ -532,13 +538,17 @@ def generate_sfp_op(pointers, *, op, dimensions, inputs, outputs, reduction, **k
         dim_splits = [1] * ndim
 
     # If the output tensor is sparse, then this is a stick reduction.
-    if reduction and tensors[-1]["device_layout"].host_stick_dim() is not None:
+    if reduction and tensors[-1]["device_layout"].host_stick_dim(
+        tensors[-1]["host_size"], tensors[-1]["host_stride"]
+    ) is not None:
         op += "nonstick"
 
     # Get operation dim map from the tensor that represents the operation space
     op_dims_tensor = inputs[0] if reduction else outputs[0]
     dl = op_dims_tensor["device_layout"]
-    dim_map = dl.dim_map()[::-1][1:]
+    dim_map = dl.dim_map(
+        op_dims_tensor["host_size"], op_dims_tensor["host_stride"]
+    )[::-1][1:]
     dim_labels = INPUT_DIM_LABELS[: ndim - 1] + OUTPUT_DIM_LABELS[:1]
 
     # Obtain (padded) dimensions of the op from a spyre tensor layout

@@ -73,15 +73,9 @@ class TensorAccess(RValue):
         if is_sparse(self.layout.device_layout):
             new_size = self.layout.size + [1]
             new_stride = self.layout.stride + [1]
-            old_stl = self.layout.device_layout
-            new_dim_map = [
-                len(self.layout.size) if d == -1 else d for d in old_stl.dim_map()
-            ]
-            new_stl = SpyreTensorLayout(
-                old_stl.device_size, new_dim_map, old_stl.device_dtype
-            )
             new_layout = FixedTiledLayout(
-                self.layout.device, self.layout.dtype, new_size, new_stride, new_stl
+                self.layout.device, self.layout.dtype, new_size, new_stride,
+                self.layout.device_layout
             )
             return TensorAccess(self.name, self.index, new_layout)
 
@@ -340,7 +334,11 @@ def analyze_tensor_access(
 
     # Special case: single dimension of size 1 is not elided by inductor
     if len(op_dimensions) == 1 and op_dimensions[0].numel == 1:
-        return [access.layout.device_layout.dim_map()[0]]
+        return [
+            access.layout.device_layout.dim_map(
+                list(access.layout.size), list(access.layout.stride)
+            )[0]
+        ]
 
     return [var_map[di.var] if di.var in var_map else -1 for di in op_dimensions]
 
@@ -396,6 +394,8 @@ class SpyreKernel(SIMDKernel[CSEVariable]):
             scales,
             tensor.layout.allocation,
             tensor.layout.device_layout,
+            list(tensor.layout.size),
+            list(tensor.layout.stride),
         )
         self.spyre_kernel_args.append((name, tensor_arg))
         return tensor_arg
@@ -479,7 +479,9 @@ class SpyreKernel(SIMDKernel[CSEVariable]):
             out_stl = args[1].device_layout  # type: ignore[union-attr]
             # Determine data op based on tensor args
             if (
-                Counter(in_stl.dim_map()) == Counter(out_stl.dim_map())
+                Counter(
+                    in_stl.dim_map(args[0].host_size, args[0].host_stride)
+                ) == Counter(out_stl.dim_map(args[1].host_size, args[1].host_stride))
                 and in_stl.device_size != out_stl.device_size
             ) or (Counter(in_di) == Counter(out_di) and in_di != out_di):
                 # Transpose:

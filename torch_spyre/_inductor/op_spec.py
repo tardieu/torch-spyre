@@ -34,6 +34,8 @@ class TensorArg:
                 A non-negative value is the PyTorch (host) dimension of the Tensor that corresponds to the d-th dimension of ks.iteration_space.
         allocation: If present, the offset in scratchpad memory assigned to the Tensor.
         device_layout: The SpyreTensorLayout describe the device shape of the Tensor.
+        host_size: The host (PyTorch) size of the Tensor.
+        host_stride: The host (PyTorch) stride of the Tensor.
     """
 
     is_input: bool
@@ -42,6 +44,8 @@ class TensorArg:
     it_dim_map: list[int]
     allocation: Any
     device_layout: SpyreTensorLayout
+    host_size: list[int]
+    host_stride: list[int]
 
 
 @dataclasses.dataclass
