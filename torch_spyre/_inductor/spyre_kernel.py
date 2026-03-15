@@ -70,7 +70,7 @@ class TensorAccess(RValue):
         If layout is sparse, construct a new layout that unsqueezes to a dense tensor
         """
 
-        if is_sparse(self.layout.device_layout):
+        if is_sparse(self.layout):
             new_size = self.layout.size + [1]
             new_stride = self.layout.stride + [1]
             new_layout = FixedTiledLayout(
