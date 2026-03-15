@@ -74,10 +74,10 @@ def get_host_dim_size(layout: FixedTiledLayout, host_dim_idx: int) -> int:
     # For tiled dimensions (appearing multiple times in dim_map), we use the first occurrence
     # which corresponds to the outermost device dimension for that host dimension
     try:
-        device_dim_idx = dl.dim_map.index(host_dim_idx)
+        device_dim_idx = dl.dim_map().index(host_dim_idx)
     except ValueError:
         raise RuntimeError(
-            f"Host dimension {host_dim_idx} not found in dim_map {dl.dim_map}"
+            f"Host dimension {host_dim_idx} not found in dim_map {dl.dim_map()}"
         )
 
     return dl.device_size[device_dim_idx]

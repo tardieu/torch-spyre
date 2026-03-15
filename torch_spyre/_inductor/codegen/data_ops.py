@@ -954,7 +954,7 @@ def generate_identity(pointers, *, op, dimensions, inputs, outputs, **kwargs):
     # Get operation dim map from the tensor that represents the operation space
     op_dims_tensor = outputs[0]
     dl = op_dims_tensor["device_layout"]
-    dim_map = dl.dim_map[::-1][1:]
+    dim_map = dl.dim_map()[::-1][1:]
     dim_labels = INPUT_DIM_LABELS[: ndim - 1] + OUTPUT_DIM_LABELS[:1]
     dim_splits = [1] * (ndim - 1) + [cores]
 

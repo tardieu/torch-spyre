@@ -33,33 +33,33 @@ class TestSpyreTensorLayout(TestCase):
     def test_default_layout(self):
         stl = SpyreTensorLayout([], torch.float16)
         self.assertEqual(stl.device_size, [1, 64])
-        self.assertEqual(stl.dim_map, [-1, -1])
+        self.assertEqual(stl.dim_map(), [-1, -1])
         self.assertEqual(stl.host_stick_dim(), None)
 
         stl = SpyreTensorLayout([128], torch.float16)
         self.assertEqual(stl.device_size, [2, 64])
-        self.assertEqual(stl.dim_map, [0, 0])
+        self.assertEqual(stl.dim_map(), [0, 0])
         self.assertEqual(stl.host_stick_dim(), 0)
 
         stl = SpyreTensorLayout([512, 256], torch.float16)
         self.assertEqual(stl.device_size, [4, 512, 64])
-        self.assertEqual(stl.dim_map, [1, 0, 1])
+        self.assertEqual(stl.dim_map(), [1, 0, 1])
         self.assertEqual(stl.host_stick_dim(), 1)
 
         stl = SpyreTensorLayout([512, 8, 256], torch.float16)
         self.assertEqual(stl.device_size, [8, 4, 512, 64])
-        self.assertEqual(stl.dim_map, [1, 2, 0, 2])
+        self.assertEqual(stl.dim_map(), [1, 2, 0, 2])
         self.assertEqual(stl.host_stick_dim(), 2)
 
     def test_dim_order(self):
         stl = SpyreTensorLayout([512, 256], torch.float16, [1, 0])
         self.assertEqual(stl.device_size, [8, 256, 64])
-        self.assertEqual(stl.dim_map, [0, 1, 0])
+        self.assertEqual(stl.dim_map(), [0, 1, 0])
         self.assertEqual(stl.host_stick_dim(), 0)
 
         stl = SpyreTensorLayout([512, 8, 256], torch.float16, [2, 1, 0])
         self.assertEqual(stl.device_size, [8, 8, 256, 64])
-        self.assertEqual(stl.dim_map, [1, 0, 2, 0])
+        self.assertEqual(stl.dim_map(), [1, 0, 2, 0])
         self.assertEqual(stl.host_stick_dim(), 0)
 
     def test_explicit_stl_constructor(self):
@@ -67,13 +67,13 @@ class TestSpyreTensorLayout(TestCase):
         stl_y = SpyreTensorLayout(
             [4, 512, 64], [1, 0, 1], get_device_dtype(torch.float16)
         )
-        self.assertEqual(stl_x.dim_map, stl_y.dim_map)
+        self.assertEqual(stl_x.dim_map(), stl_y.dim_map())
         self.assertEqual(stl_x.device_size, stl_y.device_size)
 
     def test_sparse_dim_order(self):
         stl = SpyreTensorLayout([512, 256], torch.float16, [0, 1, -1])
         self.assertEqual(stl.device_size, [256, 1, 512, 64])
-        self.assertEqual(stl.dim_map, [1, -1, 0, -1])
+        self.assertEqual(stl.dim_map(), [1, -1, 0, -1])
         self.assertEqual(stl.host_stick_dim(), None)
 
     def test_stl_str(self):
@@ -87,7 +87,7 @@ class TestSpyreTensorLayout(TestCase):
         x = torch.rand([512, 256], dtype=torch.float16).to("spyre")
         stl = x.device_tensor_layout()
         self.assertEqual(stl.device_size, [4, 512, 64])
-        self.assertEqual(stl.dim_map, [1, 0, 1])
+        self.assertEqual(stl.dim_map(), [1, 0, 1])
 
     def test_equality(self):
         x = SpyreTensorLayout([512, 256], torch.float16)
@@ -126,14 +126,14 @@ class TestSpyreTensorLayout(TestCase):
         stl = x_dev.device_tensor_layout()
         self.assertEqual(x_dev, x_dev.cpu())
         self.assertEqual(stl.device_size, [4, 512, 64])
-        self.assertEqual(stl.dim_map, [1, 0, 1])
+        self.assertEqual(stl.dim_map(), [1, 0, 1])
 
     def test_empty_layout_patched(self):
         x_stl = SpyreTensorLayout([512, 8, 256], torch.float16, [2, 1, 0])
         x = torch.empty((512, 8, 256), device_layout=x_stl, dtype=torch.float16)
         stl = x.device_tensor_layout()
         self.assertEqual(stl.device_size, [8, 8, 256, 64])
-        self.assertEqual(stl.dim_map, [1, 0, 2, 0])
+        self.assertEqual(stl.dim_map(), [1, 0, 2, 0])
 
     def test_to_sparse_layout_patched(self):
         x = torch.rand([512, 256], dtype=torch.float16)
@@ -141,7 +141,7 @@ class TestSpyreTensorLayout(TestCase):
         x_dev = x.to("spyre", device_layout=x_stl)
         self.assertEqual(x, x_dev.cpu())
         self.assertEqual(x_stl.device_size, [256, 1, 512, 64])
-        self.assertEqual(x_stl.dim_map, [1, -1, 0, -1])
+        self.assertEqual(x_stl.dim_map(), [1, -1, 0, -1])
 
     def test_add_with_mixed_layout_dim_orders(self):
         """Compiled add where x and y have different device layouts."""

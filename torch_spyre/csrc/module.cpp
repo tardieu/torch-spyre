@@ -256,10 +256,7 @@ PYBIND11_MODULE(_C, m) {
   py::class_<spyre::SpyreTensorLayout> dci_cls(m, "SpyreTensorLayout");
 
   dci_cls.def_readonly("device_size", &spyre::SpyreTensorLayout::device_size)
-      .def_property_readonly("dim_map",
-                             [](spyre::SpyreTensorLayout& self) {
-                               return self.dim_map();
-                             })
+      .def("dim_map", &spyre::SpyreTensorLayout::dim_map)
       .def_readonly("device_dtype", &spyre::SpyreTensorLayout::device_dtype)
       .def("__str__",
            [](const spyre::SpyreTensorLayout &c) { return c.toString(); })
