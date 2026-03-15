@@ -41,7 +41,7 @@ namespace spyre {
 // stays constant since allocation. There will be a better fix in the short
 // term, but this is required as Pytorch/AOTAutograd likes squeezing tensors
 // without telling you through the view op
-SpyreTensorLayout get_squeezed_layout(SpyreTensorLayout& old_stl,
+SpyreTensorLayout get_squeezed_layout(const SpyreTensorLayout& old_stl,
                                       const std::set<size_t>& removed_ones) {
   DEBUGINFO("We are correcting STL for squeeze");
   std::vector<int64_t> new_device_size;
@@ -78,7 +78,7 @@ SpyreTensorLayout get_squeezed_layout(SpyreTensorLayout& old_stl,
 }
 
 template <typename Vec>
-SpyreTensorLayout maybe_get_squeezed_layout(SpyreTensorLayout& old_stl,
+SpyreTensorLayout maybe_get_squeezed_layout(const SpyreTensorLayout& old_stl,
                                             const Vec& old_sizes,
                                             const Vec& new_sizes) {
   // A squeeze will always remove dimensions

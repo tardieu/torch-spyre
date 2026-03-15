@@ -89,7 +89,7 @@ static std::vector<int32_t> stride_map_to_dim_map(
   return stride_map;
 }
 
-std::vector<int32_t> SpyreTensorLayout::dim_map() {
+std::vector<int32_t> SpyreTensorLayout::dim_map() const {
   return stride_map_to_dim_map(this->stride_map);
 }
 

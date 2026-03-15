@@ -47,7 +47,7 @@ class SpyreTensorLayout {
    */
   std::vector<int32_t> stride_map;
 
-  std::vector<int32_t> dim_map();
+  std::vector<int32_t> dim_map() const;
 
   DataFormats device_dtype;
 
