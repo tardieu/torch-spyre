@@ -20,6 +20,7 @@
 #include <c10/core/DispatchKeySet.h>
 
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -81,9 +82,36 @@ auto get_generic_stick_layout(std::vector<int32_t> host_dim_order)
 
 static std::vector<int32_t> dim_map_to_stride_map(
     const std::vector<int32_t>& dim_map,
-    const std::vector<int64_t>& host_size = {},
-    const std::vector<int64_t>& host_stride = {}) {
-  return dim_map;
+    const std::vector<int64_t>& host_size,
+    const std::vector<int64_t>& host_stride,
+    const std::vector<int64_t>& device_size) {
+  const std::vector<int64_t>& effective_stride =
+      host_stride.empty() ? compute_host_stride(host_size) : host_stride;
+  int n = static_cast<int>(dim_map.size());
+  std::vector<int32_t> stride_map(n, -1);
+  // Track the rightmost stride_map value seen for each host dim.
+  std::unordered_map<int32_t, int32_t> last_stride;
+  for (int j = n - 1; j >= 0; --j) {
+    int32_t d = dim_map[j];
+    if (d == -1) {
+      stride_map[j] = -1;
+    } else if (last_stride.count(d) == 0) {
+      // Rightmost occurrence: use host stride directly.
+      stride_map[j] = static_cast<int32_t>(effective_stride[d]);
+      last_stride[d] = stride_map[j];
+    } else {
+      // Left occurrence: stride = rightmost stride * device_size of rightmost.
+      for (int k = j + 1; k < n; ++k) {
+        if (dim_map[k] == d) {
+          stride_map[j] =
+              static_cast<int32_t>(last_stride[d] * device_size[k]);
+          last_stride[d] = stride_map[j];
+          break;
+        }
+      }
+    }
+  }
+  return stride_map;
 }
 
 static std::vector<int64_t> compute_host_stride(
@@ -120,12 +148,26 @@ static std::vector<int64_t> compute_host_stride(
 
 static std::vector<int32_t> stride_map_to_dim_map(
     const std::vector<int32_t>& stride_map,
-    const std::vector<int64_t>& host_size = {},
+    const std::vector<int64_t>& host_size,
     const std::vector<int64_t>& host_stride = {}) {
-  const std::vector<int64_t> effective_stride =
-      (!host_size.empty() && host_stride.empty()) ? compute_host_stride(host_size)
-                                                  : host_stride;
-  return stride_map;
+  const std::vector<int64_t>& effective_stride =
+      host_stride.empty() ? compute_host_stride(host_size) : host_stride;
+  std::vector<int64_t> max_stride_le(stride_map.size(), 0);
+  std::vector<int32_t> dim_map(stride_map.size(), -1);
+  for (int i = 0; i < static_cast<int>(host_size.size()); ++i) {
+    if (host_size[i] == 1) {
+      continue;
+    }
+    int64_t hst = effective_stride[i];
+    for (int j = 0; j < static_cast<int>(stride_map.size()); ++j) {
+      int64_t dst = stride_map[j];
+      if (hst > max_stride_le[j] && hst <= dst) {
+        max_stride_le[j] = hst;
+        dim_map[j] = i;
+      }
+    }
+  }
+  return dim_map;
 }
 
 std::vector<int32_t> SpyreTensorLayout::dim_map(
@@ -186,9 +228,6 @@ void SpyreTensorLayout::init(std::vector<int64_t> host_size,
 
   // Computing tiling
   auto generic_layout = spyre::get_generic_stick_layout(dim_order);
-  this->stride_map = dim_map_to_stride_map(generic_layout, host_size,
-                                            compute_host_stride(host_size,
-                                                                dim_order));
   auto dm = generic_layout;
   this->device_size.resize(dm.size());
   bool sparse = dim_order.back() == -1;
@@ -208,6 +247,10 @@ void SpyreTensorLayout::init(std::vector<int64_t> host_size,
       this->device_size[i] = host_size[dim];
     }
   }
+  this->stride_map = dim_map_to_stride_map(generic_layout, host_size,
+                                            compute_host_stride(host_size,
+                                                                dim_order),
+                                            this->device_size);
 }
 
 std::string SpyreTensorLayout::toString() const {
