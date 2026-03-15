@@ -143,13 +143,14 @@ void SpyreTensorLayout::init(std::vector<int64_t> host_size,
 
   // Computing tiling
   this->stride_map = dim_map_to_stride_map(spyre::get_generic_stick_layout(dim_order));
-  this->device_size.resize(this->dim_map().size());
+  auto dm = this->dim_map();
+  this->device_size.resize(dm.size());
   bool sparse = dim_order.back() == -1;
   auto elems_in_stick = sparse ? 1 : this->elems_per_stick();
-  auto stick_dim = this->dim_map().back();
-  this->device_size[this->dim_map().size() - 1] = this->elems_per_stick();
-  for (int i = 0; i < this->dim_map().size() - 1; i++) {
-    auto dim = this->dim_map()[i];
+  auto stick_dim = dm.back();
+  this->device_size[dm.size() - 1] = this->elems_per_stick();
+  for (int i = 0; i < dm.size() - 1; i++) {
+    auto dim = dm[i];
     if (dim == stick_dim) {
       if (sparse) {
         this->device_size[i] = 1;

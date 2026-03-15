@@ -46,11 +46,12 @@ SpyreTensorLayout get_squeezed_layout(const SpyreTensorLayout& old_stl,
   DEBUGINFO("We are correcting STL for squeeze");
   std::vector<int64_t> new_device_size;
   std::vector<int32_t> new_dim_map;
+  auto dim_map = old_stl.dim_map();
 
-  for (size_t i = 0; i < old_stl.dim_map().size(); ++i) {
-    int32_t dim = old_stl.dim_map()[i];
+  for (size_t i = 0; i < dim_map.size(); ++i) {
+    int32_t dim = dim_map[i];
     if (removed_ones.count(dim)) {
-      if (dim != old_stl.dim_map()[old_stl.dim_map().size() - 1]) {
+      if (dim != dim_map[dim_map.size() - 1]) {
         // Remove non-stick squeezed dimensions
         continue;
       } else {
