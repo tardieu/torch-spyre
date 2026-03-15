@@ -34,33 +34,33 @@ class TestSpyreTensorLayout(TestCase):
         stl = SpyreTensorLayout([], torch.float16)
         self.assertEqual(stl.device_size, [1, 64])
         self.assertEqual(stl.dim_map([]), [-1, -1])
-        self.assertEqual(stl.host_stick_dim(), None)
+        self.assertEqual(stl.host_stick_dim([]), None)
 
         stl = SpyreTensorLayout([128], torch.float16)
         self.assertEqual(stl.device_size, [2, 64])
         self.assertEqual(stl.dim_map([128]), [0, 0])
-        self.assertEqual(stl.host_stick_dim(), 0)
+        self.assertEqual(stl.host_stick_dim([128]), 0)
 
         stl = SpyreTensorLayout([512, 256], torch.float16)
         self.assertEqual(stl.device_size, [4, 512, 64])
         self.assertEqual(stl.dim_map([512, 256]), [1, 0, 1])
-        self.assertEqual(stl.host_stick_dim(), 1)
+        self.assertEqual(stl.host_stick_dim([512, 256]), 1)
 
         stl = SpyreTensorLayout([512, 8, 256], torch.float16)
         self.assertEqual(stl.device_size, [8, 4, 512, 64])
         self.assertEqual(stl.dim_map([512, 8, 256]), [1, 2, 0, 2])
-        self.assertEqual(stl.host_stick_dim(), 2)
+        self.assertEqual(stl.host_stick_dim([512, 8, 256]), 2)
 
     def test_dim_order(self):
         stl = SpyreTensorLayout([512, 256], torch.float16, [1, 0])
         self.assertEqual(stl.device_size, [8, 256, 64])
-        self.assertEqual(stl.dim_map([512, 256]), [0, 1, 0])
-        self.assertEqual(stl.host_stick_dim(), 0)
+        self.assertEqual(stl.dim_map([512, 256], [1, 256]), [0, 1, 0])
+        self.assertEqual(stl.host_stick_dim([512, 256], [1, 256]), 0)
 
         stl = SpyreTensorLayout([512, 8, 256], torch.float16, [2, 1, 0])
         self.assertEqual(stl.device_size, [8, 8, 256, 64])
-        self.assertEqual(stl.dim_map([512, 8, 256]), [1, 0, 2, 0])
-        self.assertEqual(stl.host_stick_dim(), 0)
+        self.assertEqual(stl.dim_map([512, 8, 256], [2048, 256, 1]), [1, 0, 2, 0])
+        self.assertEqual(stl.host_stick_dim([512, 8, 256], [2048, 256, 1]), 0)
 
     def test_explicit_stl_constructor(self):
         stl_x = SpyreTensorLayout([512, 256], torch.float16)
@@ -74,7 +74,7 @@ class TestSpyreTensorLayout(TestCase):
         stl = SpyreTensorLayout([512, 256], torch.float16, [0, 1, -1])
         self.assertEqual(stl.device_size, [256, 1, 512, 64])
         self.assertEqual(stl.dim_map([512, 256]), [1, -1, 0, -1])
-        self.assertEqual(stl.host_stick_dim(), None)
+        self.assertEqual(stl.host_stick_dim([512, 256]), None)
 
     def test_stl_str(self):
         stl = SpyreTensorLayout([512, 256], torch.float16)
