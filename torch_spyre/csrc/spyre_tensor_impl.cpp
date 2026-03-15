@@ -80,6 +80,38 @@ auto get_generic_stick_layout(std::vector<int32_t> host_dim_order)
   return dim_map;
 }
 
+static std::vector<int64_t> compute_host_stride(
+    const std::vector<int64_t>& host_size) {
+  // Compute contiguous (row-major) strides from host_size.
+  // This corresponds to dim_order = [0, 1, ..., n-1] as in overload 1.
+  int n = static_cast<int>(host_size.size());
+  std::vector<int64_t> host_stride(n);
+  int64_t stride = 1;
+  for (int i = n - 1; i >= 0; --i) {
+    host_stride[i] = stride;
+    stride *= host_size[i];
+  }
+  return host_stride;
+}
+
+static std::vector<int64_t> compute_host_stride(
+    const std::vector<int64_t>& host_size,
+    const std::vector<int32_t>& dim_order) {
+  // Compute strides from host_size given dim_order (decreasing stride order).
+  // dim_order[0] has the largest stride, dim_order[n-1] has stride 1.
+  int n = static_cast<int>(dim_order.size());
+  std::vector<int64_t> host_stride(host_size.size());
+  int64_t stride = 1;
+  for (int i = n - 1; i >= 0; --i) {
+    int32_t dim = dim_order[i];
+    if (dim >= 0) {
+      host_stride[dim] = stride;
+      stride *= host_size[dim];
+    }
+  }
+  return host_stride;
+}
+
 static std::vector<int32_t> dim_map_to_stride_map(
     const std::vector<int32_t>& dim_map,
     const std::vector<int64_t>& host_size,
@@ -112,38 +144,6 @@ static std::vector<int32_t> dim_map_to_stride_map(
     }
   }
   return stride_map;
-}
-
-static std::vector<int64_t> compute_host_stride(
-    const std::vector<int64_t>& host_size) {
-  // Compute contiguous (row-major) strides from host_size.
-  // This corresponds to dim_order = [0, 1, ..., n-1] as in overload 1.
-  int n = static_cast<int>(host_size.size());
-  std::vector<int64_t> host_stride(n);
-  int64_t stride = 1;
-  for (int i = n - 1; i >= 0; --i) {
-    host_stride[i] = stride;
-    stride *= host_size[i];
-  }
-  return host_stride;
-}
-
-static std::vector<int64_t> compute_host_stride(
-    const std::vector<int64_t>& host_size,
-    const std::vector<int32_t>& dim_order) {
-  // Compute strides from host_size given dim_order (decreasing stride order).
-  // dim_order[0] has the largest stride, dim_order[n-1] has stride 1.
-  int n = static_cast<int>(dim_order.size());
-  std::vector<int64_t> host_stride(host_size.size());
-  int64_t stride = 1;
-  for (int i = n - 1; i >= 0; --i) {
-    int32_t dim = dim_order[i];
-    if (dim >= 0) {
-      host_stride[dim] = stride;
-      stride *= host_size[dim];
-    }
-  }
-  return host_stride;
 }
 
 static std::vector<int32_t> stride_map_to_dim_map(
