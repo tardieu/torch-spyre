@@ -147,6 +147,7 @@ static std::vector<int32_t> dim_map_to_stride_map(
 }
 
 static std::vector<int32_t> stride_map_to_dim_map(
+    const std::vector<int64_t>& device_size,
     const std::vector<int32_t>& stride_map,
     const std::vector<int64_t>& host_size,
     const std::vector<int64_t>& host_stride = {}) {
@@ -160,6 +161,9 @@ static std::vector<int32_t> stride_map_to_dim_map(
     }
     int64_t hst = effective_stride[i];
     for (int j = 0; j < static_cast<int>(stride_map.size()); ++j) {
+      if (device_size[j] == 1) {
+        continue;
+      }
       int64_t dst = stride_map[j];
       if (hst > max_stride_le[j] && hst <= dst) {
         max_stride_le[j] = hst;
@@ -172,7 +176,7 @@ static std::vector<int32_t> stride_map_to_dim_map(
 
 std::vector<int32_t> SpyreTensorLayout::dim_map(
     std::vector<int64_t> host_size, std::vector<int64_t> host_stride) const {
-  return stride_map_to_dim_map(this->stride_map, host_size, host_stride);
+  return stride_map_to_dim_map(this->device_size, this->stride_map, host_size, host_stride);
 }
 
 SpyreTensorLayout::SpyreTensorLayout(std::vector<int64_t> device_size,
