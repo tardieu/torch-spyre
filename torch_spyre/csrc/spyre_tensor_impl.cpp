@@ -94,24 +94,6 @@ static std::vector<int64_t> compute_host_stride(
   return host_stride;
 }
 
-static std::vector<int64_t> compute_host_stride(
-    const std::vector<int64_t>& host_size,
-    const std::vector<int32_t>& dim_order) {
-  // Compute strides from host_size given dim_order (decreasing stride order).
-  // dim_order[0] has the largest stride, dim_order[n-1] has stride 1.
-  int n = static_cast<int>(dim_order.size());
-  std::vector<int64_t> host_stride(host_size.size());
-  int64_t stride = 1;
-  for (int i = n - 1; i >= 0; --i) {
-    int32_t dim = dim_order[i];
-    if (dim >= 0) {
-      host_stride[dim] = stride;
-      stride *= host_size[dim];
-    }
-  }
-  return host_stride;
-}
-
 static std::vector<int32_t> dim_map_to_stride_map(
     const std::vector<int32_t>& dim_map,
     const std::vector<int64_t>& host_size,
@@ -121,7 +103,6 @@ static std::vector<int32_t> dim_map_to_stride_map(
       host_stride.empty() ? compute_host_stride(host_size) : host_stride;
   int n = static_cast<int>(dim_map.size());
   std::vector<int32_t> stride_map(n, -1);
-  // Track the rightmost stride_map value seen for each host dim.
   std::unordered_map<int32_t, int32_t> last_stride;
   for (int j = n - 1; j >= 0; --j) {
     int32_t d = dim_map[j];
@@ -130,17 +111,11 @@ static std::vector<int32_t> dim_map_to_stride_map(
     } else if (last_stride.count(d) == 0) {
       // Rightmost occurrence: use host stride directly.
       stride_map[j] = static_cast<int32_t>(effective_stride[d]);
-      last_stride[d] = stride_map[j];
+      last_stride[d] = stride_map[j] * device_size[j];
     } else {
-      // Left occurrence: stride = rightmost stride * device_size of rightmost.
-      for (int k = j + 1; k < n; ++k) {
-        if (dim_map[k] == d) {
-          stride_map[j] =
-              static_cast<int32_t>(last_stride[d] * device_size[k]);
-          last_stride[d] = stride_map[j];
-          break;
-        }
-      }
+      // Left occurrence: use last_stride.
+      stride_map[j] = static_cast<int32_t>(last_stride[d]);
+      last_stride[d] = stride_map[j] * device_size[j];
     }
   }
   return stride_map;
@@ -284,8 +259,7 @@ void SpyreTensorLayout::init(std::vector<int64_t> host_size,
     }
   }
   this->stride_map = dim_map_to_stride_map(generic_layout, host_size,
-                                            compute_host_stride(host_size,
-                                                                dim_order),
+                                            compute_host_stride(host_size),
                                             this->device_size);
 }
 

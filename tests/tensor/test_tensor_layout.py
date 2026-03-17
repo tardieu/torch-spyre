@@ -54,8 +54,8 @@ class TestSpyreTensorLayout(TestCase):
     def test_dim_order(self):
         stl = SpyreTensorLayout([512, 256], torch.float16, [1, 0])
         self.assertEqual(stl.device_size, [8, 256, 64])
-        self.assertEqual(stl.dim_map([512, 256], [1, 256]), [0, 1, 0])
-        self.assertEqual(stl.host_stick_dim([512, 256], [1, 256]), 0)
+        self.assertEqual(stl.dim_map([512, 256], [256, 1]), [0, 1, 0])
+        self.assertEqual(stl.host_stick_dim([512, 256], [256, 1]), 0)
 
         stl = SpyreTensorLayout([512, 8, 256], torch.float16, [2, 1, 0])
         self.assertEqual(stl.device_size, [8, 8, 256, 64])
@@ -104,7 +104,7 @@ class TestSpyreTensorLayout(TestCase):
 
         y = torch.rand([512, 512], dtype=torch.float16)
         y_stl = SpyreTensorLayout(
-            [8, 512, 64], [1, 0, 1], get_device_dtype(torch.float16)
+            [8, 512, 64], [64, 512, 1], get_device_dtype(torch.float16)
         )
         y_dev = to_with_layout(y, y_stl)
         self.assertEqual(y, y_dev.cpu())
