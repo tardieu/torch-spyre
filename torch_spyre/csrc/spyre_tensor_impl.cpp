@@ -125,7 +125,7 @@ static std::vector<int32_t> dim_map_to_stride_map(
   std::unordered_map<int32_t, int32_t> last_stride;
   for (int j = n - 1; j >= 0; --j) {
     int32_t d = dim_map[j];
-    if (d == -1) {
+    if (d == -1 || host_size[d] == 1) {
       stride_map[j] = -1;
     } else if (last_stride.count(d) == 0) {
       // Rightmost occurrence: use host stride directly.
@@ -155,8 +155,11 @@ static std::vector<int32_t> stride_map_to_dim_map(
       host_stride.empty() ? compute_host_stride(host_size) : host_stride;
   std::vector<int64_t> max_stride_le(stride_map.size(), 0);
   std::vector<int32_t> dim_map(stride_map.size(), -1);
+  std::vector<int32_t> ones(host_size.size(), -1); // host dimensions of size 1
+  int count = 0; // count of host dimensions of size 1
   for (int i = 0; i < static_cast<int>(host_size.size()); ++i) {
     if (host_size[i] == 1) {
+      ones[count++] = i;
       continue;
     }
     int64_t hst = effective_stride[i];
@@ -169,6 +172,35 @@ static std::vector<int32_t> stride_map_to_dim_map(
         max_stride_le[j] = hst;
         dim_map[j] = i;
       }
+    }
+  }
+  auto stick_dim = dim_map.back();
+  if (stick_dim != -1) {
+    bool found = false;
+    for (int i = 0; i < static_cast<int>(device_size.size())-1; ++i) {
+      if (dim_map[i] == stick_dim) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      // handle stick dimension with 2 to 64 elements
+      for (int i = 0; i < static_cast<int>(device_size.size())-1; ++i) {
+        if (dim_map[i] == -1) {
+          dim_map[i] = stick_dim;
+          break;
+        }
+      }
+    }
+  }
+  if (host_size.size() == device_size.size()-1 && stick_dim == -1) {
+    // handle stick dimension with 1 element in dense tensor
+    dim_map[device_size.size()-1] = ones[count-1];
+  }
+  for (int i = 0; i < static_cast<int>(device_size.size())-1 && count > 0; ++i) {
+    // map device dimensions of size 1 to host dimensions of size 1
+    if (dim_map[i] == -1) {
+      dim_map[i] = ones[--count];
     }
   }
   return dim_map;
