@@ -122,7 +122,7 @@ auto get_device_stride_info(c10::IntArrayRef sizes, c10::IntArrayRef strides,
   DataConversionStrideInfo stride_info;
   auto cpu_shape = sizes.vec();
   auto cpu_strides = strides.vec();
-  auto dim_map = stl.dim_map(sizes.vec(), strides.vec());
+  auto dim_map = stl.dim_map();
 
   // sparse tensors need no padding of the stick dimension
   bool sparse = dim_map.back() == -1;
@@ -198,7 +198,7 @@ auto get_device_stride_infos(c10::IntArrayRef sizes, c10::IntArrayRef strides,
   std::vector<DataConversionStrideInfo> dcsi;
   auto cpu_shape = sizes.vec();
   int stick_size = stl.elems_per_stick();
-  auto dim_map = stl.dim_map(sizes.vec(), strides.vec());
+  auto dim_map = stl.dim_map();
 
   // sparse tensors need no padding of the stick dimension
   bool sparse = dim_map.back() == -1;

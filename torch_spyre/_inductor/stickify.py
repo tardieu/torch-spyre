@@ -59,10 +59,8 @@ aten = torch.ops.aten
 spyreop = torch.ops.spyre
 
 
-def is_sparse(layout: FixedTiledLayout) -> bool:
-    return layout.device_layout.dim_map(
-        list(layout.size), list(layout.stride)
-    )[-1] == -1
+def is_sparse(stl: SpyreTensorLayout) -> bool:
+    return stl.dim_map()[-1] == -1
 
 
 def device_layout_like(
@@ -76,6 +74,8 @@ def device_layout_like(
             layout.device_layout.device_size,
             layout.device_layout.stride_map,
             get_device_dtype(dtype),
+            layout.size,
+            layout.stride,
         )
     else:
         adjusted_device_size = list(layout.device_layout.device_size)
@@ -99,6 +99,8 @@ def device_layout_like(
             adjusted_device_size,
             layout.device_layout.stride_map,
             get_device_dtype(dtype),
+            layout.size,
+            layout.stride,
         )
 
 
@@ -114,7 +116,7 @@ def pointwise_layout(n: SchedulerNode, args: list[SchedNodeArg]) -> FixedTiledLa
         x_stl = x.layout.device_layout
         match op:
             case spyreop.slice.default:
-                if not is_sparse(x.layout):
+                if not is_sparse(x_stl):
                     raise Unsupported("slice on non-sparse tensor")
                 if len(x.layout.size) != 1:
                     raise Unsupported("slice on non 1-D tensor")
@@ -124,7 +126,7 @@ def pointwise_layout(n: SchedulerNode, args: list[SchedNodeArg]) -> FixedTiledLa
                 )
 
             case spyreop.swap.default:
-                if not is_sparse(x.layout):
+                if not is_sparse(x_stl):
                     raise Unsupported("swap on non-sparse tensor")
                 if len(x.layout.size) != 1:
                     raise Unsupported("swap on non 1-D tensor")
@@ -134,7 +136,7 @@ def pointwise_layout(n: SchedulerNode, args: list[SchedNodeArg]) -> FixedTiledLa
                 )
 
             case aten.clone.default:
-                if is_sparse(x.layout):
+                if is_sparse(x_stl):
                     # TODO: Determine whether we already support cloning a sparse tensor
                     #       or what functionality needs to be added to enable it.  Restickify?
                     raise Unsupported("clone on sparse tensor")
@@ -161,7 +163,7 @@ def pointwise_layout(n: SchedulerNode, args: list[SchedNodeArg]) -> FixedTiledLa
                     # to avoid tiling them.
                     in_device_coords = device_coordinates(x.layout, x.dep)
                     stick_expr = in_device_coords[-1]
-                    if is_sparse(x.layout):
+                    if is_sparse(x_stl):
                         raise Unsupported("TODO: unary op with view on sparse tensor")
 
                     if stick_expr in out_coords:
@@ -195,6 +197,8 @@ def pointwise_layout(n: SchedulerNode, args: list[SchedNodeArg]) -> FixedTiledLa
             x_stl.device_size,
             x_stl.stride_map,
             x_stl.device_dtype,
+            x.layout.size,
+            x.layout.stride,
         )
         return FixedTiledLayout(
             output.device, output.dtype, output.size, output.stride, stl
@@ -274,7 +278,7 @@ def reduction_layout(n: SchedulerNode, args: list[SchedNodeArg]) -> FixedTiledLa
         y = args[1]
         x_stl = x.layout.device_layout
         y_stl = y.layout.device_layout
-        if is_sparse(x.layout) or is_sparse(y.layout):
+        if is_sparse(x_stl) or is_sparse(y_stl):
             raise Unsupported(f"{red.reduction_type} on sparse tensor {x_stl} {y_stl}")
 
         x_coords = host_coordinates(x.layout, x.dep)
@@ -322,9 +326,7 @@ def reduction_layout(n: SchedulerNode, args: list[SchedNodeArg]) -> FixedTiledLa
     elif red.reduction_type == "exx2":
         x = args[0]
         x_stl = x.layout.device_layout
-        if is_sparse(x.layout) or x_stl.host_stick_dim(
-            list(x.layout.size), list(x.layout.stride)
-        ) != (len(x.layout.size) - 1):
+        if is_sparse(x_stl) or x_stl.host_stick_dim() != (len(x.layout.size) - 1):
             raise Unsupported(f"exx2 unsupported layout {x_stl}")
         dim_map = list(range(len(output.size))) + [-1]
         stl = SpyreTensorLayout(output.size, output.dtype, dim_map)

@@ -44,8 +44,34 @@ namespace spyre {
 SpyreTensorLayout get_squeezed_layout(const SpyreTensorLayout& old_stl,
                                       const std::set<size_t>& removed_ones) {
   DEBUGINFO("We are correcting STL for squeeze");
-  return SpyreTensorLayout(old_stl.device_size, old_stl.stride_map,
-                           old_stl.device_dtype);
+
+  std::vector<int64_t> new_device_size;
+
+  auto dm = old_stl.dim_map();
+  for (size_t i = 0; i < dm.size(); ++i) {
+    int32_t dim = dm[i];
+    if (removed_ones.count(dim)) {
+      if (dim != dm[dm.size() - 1]) {
+        // Remove non-stick squeezed dimensions
+        continue;
+      } else {
+        // Keep squeezed stick dimension but mark as sparse
+        new_device_size.push_back(
+            (i == old_stl.device_size.size() - 1)
+                ? spyre::elems_per_stick(old_stl.device_dtype)
+                : 1);      }
+    } else {
+      // Do the normal logic for squeeze otherwise
+      auto below = std::count_if(
+          removed_ones.begin(), removed_ones.end(),
+          [dim](size_t r) { return static_cast<int32_t>(r) < dim; });
+
+      new_device_size.push_back(old_stl.device_size[i]);
+    }
+  }
+
+  return SpyreTensorLayout(new_device_size, old_stl.stride_map,
+                           old_stl.device_dtype, old_stl.host_size, old_stl.device_size);
 }
 
 template <typename Vec>

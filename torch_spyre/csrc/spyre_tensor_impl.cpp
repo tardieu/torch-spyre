@@ -181,21 +181,12 @@ static std::vector<int32_t> stride_map_to_dim_map(
   return dim_map;
 }
 
-std::vector<int32_t> SpyreTensorLayout::dim_map(
-    std::vector<int64_t> host_size, std::vector<int64_t> host_stride) const {
-  return stride_map_to_dim_map(this->device_size, this->stride_map, host_size, host_stride);
+std::vector<int32_t> SpyreTensorLayout::dim_map() const {
+  return stride_map_to_dim_map(this->device_size, this->stride_map, this->host_size, this->host_stride);
 }
 
-SpyreTensorLayout::SpyreTensorLayout(std::vector<int64_t> device_size,
-                                     std::vector<int32_t> stride_map,
-                                     DataFormats device_dtype)
-    : device_size(device_size),
-      stride_map(stride_map),
-      device_dtype(device_dtype) {}
-
-std::optional<int32_t> SpyreTensorLayout::host_stick_dim(
-    std::vector<int64_t> host_size, std::vector<int64_t> host_stride) {
-  int32_t stick_dim = this->dim_map(host_size, host_stride).back();
+std::optional<int32_t> SpyreTensorLayout::host_stick_dim() {
+  int32_t stick_dim = this->dim_map().back();
   if (stick_dim == -1) {
     return std::nullopt;
   } else {
@@ -261,6 +252,9 @@ void SpyreTensorLayout::init(std::vector<int64_t> host_size,
   this->stride_map = dim_map_to_stride_map(generic_layout, host_size,
                                             compute_host_stride(host_size),
                                             this->device_size);
+
+  this->host_size = host_size;
+  this->host_stride = compute_host_stride(host_size);
 }
 
 std::string SpyreTensorLayout::toString() const {
@@ -282,7 +276,21 @@ std::string SpyreTensorLayout::toString() const {
   }
   ss << "], device_dtype=DataFormats.";
   ss << EnumsConversion::dataFormatsToString(this->device_dtype);
-  ss << ")";
+  ss << ", host_size=[";
+  for (size_t i = 0; i < this->host_size.size(); i++) {
+    ss << this->host_size[i];
+    if (i < this->host_size.size() - 1) {
+      ss << ", ";
+    }
+  }
+  ss << "], host_stride=[";
+  for (size_t i = 0; i < this->host_stride.size(); i++) {
+    ss << this->host_stride[i];
+    if (i < this->host_stride.size() - 1) {
+      ss << ", ";
+    }
+  }
+  ss << "])";
   return ss.str();
 }
 

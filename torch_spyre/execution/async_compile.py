@@ -69,8 +69,6 @@ class SpyreAsyncCompile:
                             "it_dim_map": ts.it_dim_map,
                             "device_layout": ts.device_layout,
                             "lx_addr": lx_addr,
-                            "host_size": ts.host_size,
-                            "host_stride": ts.host_stride,
                         }
                     )
                     arg_map.append(ts.arg_index)
@@ -81,8 +79,6 @@ class SpyreAsyncCompile:
                             "it_dim_map": ts.it_dim_map,
                             "device_layout": ts.device_layout,
                             "lx_addr": lx_addr,
-                            "host_size": ts.host_size,
-                            "host_stride": ts.host_stride,
                         }
                     )
                     arg_map.append(ts.arg_index)

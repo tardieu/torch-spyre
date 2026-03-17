@@ -257,26 +257,22 @@ PYBIND11_MODULE(_C, m) {
 
   dci_cls.def_readonly("device_size", &spyre::SpyreTensorLayout::device_size)
       .def_readonly("stride_map", &spyre::SpyreTensorLayout::stride_map)
-      .def("dim_map", &spyre::SpyreTensorLayout::dim_map,
-           py::arg("host_size"),
-           py::arg("host_stride") = std::vector<int64_t>{})
+      .def("dim_map", &spyre::SpyreTensorLayout::dim_map)
       .def_readonly("device_dtype", &spyre::SpyreTensorLayout::device_dtype)
       .def("__str__",
            [](const spyre::SpyreTensorLayout &c) { return c.toString(); })
       .def("__repr__",
            [](const spyre::SpyreTensorLayout &c) { return c.toString(); })
       .def("elems_per_stick", &spyre::SpyreTensorLayout::elems_per_stick)
-      .def("host_stick_dim", &spyre::SpyreTensorLayout::host_stick_dim,
-           py::arg("host_size") = std::vector<int64_t>{},
-           py::arg("host_stride") = std::vector<int64_t>{})
+      .def("host_stick_dim", &spyre::SpyreTensorLayout::host_stick_dim)
       .def(py::self == py::self)
       .def(py::init<std::vector<int64_t>, c10::ScalarType>(),
            py::arg("host_size"), py::arg("dtype"))
       .def(py::init<std::vector<int64_t>, c10::ScalarType,
                     std::vector<int32_t>>(),
            py::arg("host_size"), py::arg("dtype"), py::arg("dim_order"))
-      .def(py::init<std::vector<int64_t>, std::vector<int32_t>, DataFormats>(),
-           py::arg("device_size"), py::arg("stride_map"), py::arg("device_dtype"));
+      .def(py::init<std::vector<int64_t>, std::vector<int32_t>, DataFormats, std::vector<int64_t>, std::vector<int64_t>>(),
+           py::arg("device_size"), py::arg("stride_map"), py::arg("device_dtype"), py::arg("host_size"), py::arg("host_stride"));
 
   m.def("spyre_empty_with_layout", &spyre::spyre_empty_with_layout);
   m.def("to_with_layout", &spyre::to_with_layout);

@@ -108,9 +108,7 @@ def generate_sdsc(pointers, *, op, dimensions, inputs, outputs, reduction, **kwa
             dim % len(dimensions) for dim in kwargs["op_info"]["transposed_dims"]
         ]
         if (
-            inputs[0]["device_layout"].host_stick_dim(
-                inputs[0]["host_size"], inputs[0]["host_stride"]
-            ) in transposed_dims
+            inputs[0]["device_layout"].host_stick_dim() in transposed_dims
         ):  # stick transpose implemented through restickify
             return generate_transpose_3d_stick(
                 pointers,
@@ -135,9 +133,7 @@ def generate_sdsc(pointers, *, op, dimensions, inputs, outputs, reduction, **kwa
             dim % len(dimensions) for dim in kwargs["op_info"]["transposed_dims"]
         ]
         if (
-            inputs[0]["device_layout"].host_stick_dim(
-                inputs[0]["host_size"], inputs[0]["host_stride"]
-            ) in transposed_dims
+            inputs[0]["device_layout"].host_stick_dim() in transposed_dims
         ):  # stick transpose implemented through restickify
             return generate_transpose_4d_stick(
                 pointers,
