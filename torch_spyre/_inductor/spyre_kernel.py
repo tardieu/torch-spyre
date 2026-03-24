@@ -775,8 +775,13 @@ class SpyreKernel(Kernel[CSEVariable]):
 
 
 def simplify_op_spec(op_spec):
-    new_var_ranges, new_tensors, _ = align_tensors(
-        op_spec.iteration_space_dict,
+    var_ranges = {var: val[0] for var, val in op_spec.iteration_space_dict.items()}
+    print(op_spec.iteration_space_dict)
+    op_it_space_splits = {
+        var: val[1] for var, val in op_spec.iteration_space_dict.items()
+    }
+    new_var_ranges, new_tensors, new_op_it_space_splits = align_tensors(
+        var_ranges,
         [
             {
                 "size": arg.device_size,
@@ -784,8 +789,12 @@ def simplify_op_spec(op_spec):
             }
             for arg in op_spec.args
         ],
+        op_it_space_splits,
     )
-    op_spec.iteration_space_dict = new_var_ranges
+    op_spec.iteration_space_dict = {
+        var: (val, new_op_it_space_splits[var]) for var, val in new_var_ranges.items()
+    }
+    print(op_spec.iteration_space_dict)
     for arg, t in zip(op_spec.args, new_tensors):
         arg.device_size = t["size"]
         arg.device_coordinates = t["coordinates"]
