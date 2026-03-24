@@ -770,7 +770,7 @@ class SpyreKernel(Kernel[CSEVariable]):
 
 
 def simplify_op_spec(op_spec):
-    new_var_ranges, new_tensors = align_tensors(
+    new_var_ranges, new_tensors, _ = align_tensors(
         op_spec.iteration_space_dict,
         [
             {

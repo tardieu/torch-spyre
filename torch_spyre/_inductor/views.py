@@ -232,7 +232,7 @@ def align_tensors(var_ranges, tensors, op_it_space_splits={}):
     for j, intervals in enumerate(breakdown):
         size = []
         coordinates = []
-        for num, den, var, mod, dim_size in intervals:
+        for num, den, var, mod, dim_size in intervals[:-1]:
             if var is None:
                 size.append(dim_size)
                 coordinates.append(sympy.S.Zero)
@@ -259,6 +259,8 @@ def align_tensors(var_ranges, tensors, op_it_space_splits={}):
                 size.append(num)
                 coordinates.append(sympy.S.Zero)
         num, den, var, mod, dim_size = intervals[-1]
+        size.append(dim_size)
+        coordinates.append(var % dim_size if var is not None else sympy.S.Zero)
         new_tensors.append({"size": size, "coordinates": coordinates})
 
     rank = max([len(t["size"]) for t in new_tensors])
@@ -411,5 +413,12 @@ if __name__ == "__main__":
                 }
             ],
             {x0: 1, x1: 32},
+        )
+    )
+
+    print(
+        align_tensors(
+            {x0: 10},
+            [{"size": [1, 64], "coordinates": [sympy.S.Zero, x0]}],
         )
     )
