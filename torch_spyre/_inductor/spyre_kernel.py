@@ -34,8 +34,8 @@ from .constants import (
     MATMUL_REDUCTION_OP,
     SPYRE_FP32_OPS,
     BATCH_MATMUL_OP,
-    TRANSPOSE_OP,
-    CLONE_OP,
+    IDENTITY_OP,
+    RESTICKIFY_OP,
 )
 from .errors import Unsupported
 from .ir import FixedTiledLayout
@@ -204,14 +204,6 @@ class SpyreOpFuncs:
     @staticmethod
     def rsqrt(x):
         return PointwiseOp("rsqrt", [x])
-
-    @staticmethod
-    def slice(x):
-        return PointwiseOp("slice", [x])
-
-    @staticmethod
-    def swap(x):
-        return PointwiseOp("swap", [x])
 
     @staticmethod
     def sigmoid(x):
@@ -413,7 +405,11 @@ class SpyreKernel(Kernel[CSEVariable]):
         if hasattr(self.current_node, "op_it_space_splits"):
             core_division = self.current_node.op_it_space_splits  # type: ignore[union-attr]
 
-        it_space = {d.var: (d.numel, core_division.get(d.var, 1)) for d in dims}
+        it_space = {
+            d.var: (d.numel, core_division.get(d.var, 1))
+            for d in dims
+            if not is_wildcard(d.var)
+        }
 
         return OpSpec(
             op,
@@ -498,6 +494,7 @@ class SpyreKernel(Kernel[CSEVariable]):
             ]
             in_stl = args[0].device_layout  # type: ignore[union-attr]
             out_stl = args[1].device_layout  # type: ignore[union-attr]
+            transposed_dims = []
             # Determine data op based on tensor args
             if (
                 Counter(in_stl.dim_map) == Counter(out_stl.dim_map)
@@ -506,22 +503,30 @@ class SpyreKernel(Kernel[CSEVariable]):
                 # Transpose:
                 #   - check that the input / output DimensionInfo are the same, but in different order.
                 #   - check that the dim map has the same dimensions (no duplicate dimensions), but device size differs.
-                op = TRANSPOSE_OP
+                transposed_dims = [
+                    d for d in range(len(in_di)) if in_di[d] != out_di[d]
+                ]
+                op = (
+                    RESTICKIFY_OP
+                    if in_stl.host_stick_dim() in transposed_dims
+                    else IDENTITY_OP
+                )
+
             elif all(is_wildcard(d.var) for d in in_di) and not all(
                 is_wildcard(d.var) for d in out_di
             ):
                 # Broadcast: scalar input (all dims wildcards) expanding to non-scalar output.
-                op = CLONE_OP
+                op = IDENTITY_OP
                 in_di = out_di
                 args[0] = self.create_tensor_arg(True, value.name, value, in_di)
             elif in_stl.device_size == out_stl.device_size:
                 # Clone: check that device layout is the same.
-                op = CLONE_OP
+                op = IDENTITY_OP
             else:
                 op = CLONE_OP
 
             op_spec = self.create_op_spec(op, False, out_di, args, op_info)
-            if op == TRANSPOSE_OP:
+            if len(transposed_dims) > 0:
                 op_spec.op_info["transposed_dims"] = [
                     d for d in range(len(in_di)) if in_di[d] != out_di[d]
                 ]
@@ -706,6 +711,12 @@ class SpyreKernel(Kernel[CSEVariable]):
         for op_spec in self.op_specs:
             simplify_op_spec(op_spec)
 
+        def sympy_str(x: sympy.Expr) -> str:
+            if isinstance(x, int) or isinstance(x, sympy.Integer):
+                return str(x)
+            else:
+                return "sympify('" + str(x) + "')"
+
         # Now that all loads/stores have been processed we know the final kernel_args and can map names to indices
         actuals = self.args.python_argdefs()[1]
         for name, tensor_arg in self.spyre_kernel_args:
@@ -734,7 +745,17 @@ class SpyreKernel(Kernel[CSEVariable]):
                         buf.writeline(f"iteration_space={op_spec.iteration_space!r},")
                         buf.writeline(
                             "iteration_space_dict={"
-                            + f"{', '.join([sympy.srepr(k) + ': (' + sympy.srepr(v[0]) + ', ' + str(v[1]) + ')' for k, v in op_spec.iteration_space_dict.items()])}"
+                            + ", ".join(
+                                [
+                                    sympy_str(k)
+                                    + ": ("
+                                    + sympy_str(v[0])
+                                    + ", "
+                                    + str(v[1])
+                                    + ")"
+                                    for k, v in op_spec.iteration_space_dict.items()
+                                ]
+                            )
                             + "},"
                         )
                         buf.writeline(f"op_info={op_spec.op_info!r},")
@@ -748,10 +769,14 @@ class SpyreKernel(Kernel[CSEVariable]):
                                     )
                                     buf.writeline(f"device_size={arg.device_size},")
                                     buf.writeline(
-                                        f"# device_coordinates: {arg.device_coordinates}"
-                                    )
-                                    buf.writeline(
-                                        f"device_coordinates=[{', '.join([sympy.srepr(e) for e in arg.device_coordinates])}],"
+                                        "device_coordinates=["
+                                        + ", ".join(
+                                            [
+                                                sympy_str(e)
+                                                for e in arg.device_coordinates
+                                            ]
+                                        )
+                                        + "],"
                                     )
                                     buf.writeline(
                                         f"allocation={arg.allocation!r}, dtype={arg.dtype!r}, it_dim_map={arg.it_dim_map!r}, "
