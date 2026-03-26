@@ -523,7 +523,8 @@ class SpyreKernel(Kernel[CSEVariable]):
                 # Clone: check that device layout is the same.
                 op = IDENTITY_OP
             else:
-                op = CLONE_OP
+                # Unsupported data operation on TensorArg
+                raise Unsupported(f"Data operation {args[0]})=>{args[1]}")
 
             op_spec = self.create_op_spec(op, False, out_di, args, op_info)
             if len(transposed_dims) > 0:
@@ -708,8 +709,8 @@ class SpyreKernel(Kernel[CSEVariable]):
     def codegen_kernel(self):
         """Codegen the body of this kernel by pretty printing its list of OpSpecs"""
 
-        for op_spec in self.op_specs:
-            simplify_op_spec(op_spec)
+        # for op_spec in self.op_specs:
+        #    simplify_op_spec(op_spec)
 
         def sympy_str(x: sympy.Expr) -> str:
             if isinstance(x, int) or isinstance(x, sympy.Integer):
@@ -800,12 +801,8 @@ class SpyreKernel(Kernel[CSEVariable]):
 
 
 def simplify_op_spec(op_spec):
-    var_ranges = {var: val[0] for var, val in op_spec.iteration_space_dict.items()}
-    op_it_space_splits = {
-        var: val[1] for var, val in op_spec.iteration_space_dict.items()
-    }
-    new_var_ranges, new_tensors, new_op_it_space_splits = align_tensors(
-        var_ranges,
+    new_op_space_splits, new_tensors = align_tensors(
+        op_spec.iteration_space_dict,
         [
             {
                 "size": arg.device_size,
@@ -813,11 +810,8 @@ def simplify_op_spec(op_spec):
             }
             for arg in op_spec.args
         ],
-        op_it_space_splits,
     )
-    op_spec.iteration_space_dict = {
-        var: (val, new_op_it_space_splits[var]) for var, val in new_var_ranges.items()
-    }
+    op_spec.iteration_space_dict = new_op_space_splits
     for arg, t in zip(op_spec.args, new_tensors):
         arg.device_size = t["size"]
         arg.device_coordinates = t["coordinates"]
