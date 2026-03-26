@@ -709,8 +709,8 @@ class SpyreKernel(Kernel[CSEVariable]):
     def codegen_kernel(self):
         """Codegen the body of this kernel by pretty printing its list of OpSpecs"""
 
-        # for op_spec in self.op_specs:
-        #    simplify_op_spec(op_spec)
+        for op_spec in self.op_specs:
+            simplify_op_spec(op_spec)
 
         def sympy_str(x: sympy.Expr) -> str:
             if isinstance(x, int) or isinstance(x, sympy.Integer):
