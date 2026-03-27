@@ -106,7 +106,11 @@ def pointwise_layout(n: SchedulerNode, args: list[SchedNodeArg]) -> FixedTiledLa
     output: FixedLayout = n.node.get_layout()
     output_dep = next(iter(n.read_writes.writes))
     origin_node = next(iter(pw.origins))
-    op = origin_node.target
+    if origin_node is not None:
+        op = origin_node.target
+    else:
+        # TODO: origin node cannot be set in the lowering of overwrite op
+        op = spyreop.overwrite.default
 
     if len(args) == 1:
         x = args[0]
@@ -129,6 +133,11 @@ def pointwise_layout(n: SchedulerNode, args: list[SchedNodeArg]) -> FixedTiledLa
                     output.device, output.dtype, output.size, output.stride, stl
                 )
 
+            case spyreop.overwrite.default:
+                stl = SpyreTensorLayout(output.size, output.dtype)
+                return FixedTiledLayout(
+                    output.device, output.dtype, output.size, output.stride, stl
+                )
             case _:
                 in_coords = host_coordinates(x.layout, x.dep)
                 out_coords = host_coordinates(output, output_dep)
