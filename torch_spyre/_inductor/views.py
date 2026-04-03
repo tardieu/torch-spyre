@@ -50,6 +50,7 @@ def compute_coordinates(
         term = index.subs({v: 0 for v in vars - {var}})
         # compute index({var=1}) and index({var=var_ranges[var]})
         # TODO: handle non-zero offset in index
+        # https://github.com/torch-spyre/torch-spyre/issues/1333
         assert term.subs(var, 0) == 0, f"Non-zero offset in index expression {index}"
         step = term.subs(var, 1)
         limit = term.subs(var, var_ranges[var])
@@ -165,6 +166,7 @@ def normalize_coordinates(
         expr = coordinate.replace(sympy.floor, lambda x: x)
         vars = expr.free_symbols
         # TODO: handle non-zero offset in coordinate expression
+        # https://github.com/torch-spyre/torch-spyre/issues/1333
         assert expr.subs({var: sympy.S.Zero for var in vars}) == 0, (
             f"Non-zero offset in coordinate expression {expr}"
         )
@@ -187,7 +189,8 @@ def normalize_coordinates(
             elif term.func == sympy.Mul and term.args[0].is_rational:
                 expr0, expr1 = term.args
                 mod = expr1.args[1] if expr1.func == sympy.Mod else var_ranges[var]
-                # TODO: handle num != 1 and den != 1
+                # TODO: handle non-unit fractions
+                # https://github.com/torch-spyre/torch-spyre/issues/1353
                 assert expr0.numerator == 1 or expr0.denominator == 1, (
                     f"Unsupported coordinate expression {expr}"
                 )
