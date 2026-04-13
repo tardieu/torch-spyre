@@ -16,6 +16,7 @@ BATCH_MATMUL_OP = "batchmatmul"
 IDENTITY_OP = "identity"
 MATMUL_REDUCTION_OP = "matmul"
 RESTICKIFY_OP = "ReStickifyOpHBM"
+DEPTHWISE_CONV2D_OP = "depthwiseconv2dnative"
 
 DEVICE_NAME = "spyre"
 
@@ -56,3 +57,4 @@ MATMUL_LAYOUT_LABELS = ["INPUT", "KERNEL", "OUTPUT", "KERNEL_IDX"]
 INPUT_DIM_LABELS = ["mb", "x", "y", "i", "j"]
 OUTPUT_DIM_LABELS = ["out"]
 MATMUL_DIM_LABELS = ["y", "x", "mb", "out", "in"]
+CONV2D_DIM_LABELS = ["mb", "in", "i", "j", "ki", "kj"]

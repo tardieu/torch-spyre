@@ -25,6 +25,7 @@ from torch_spyre._inductor.constants import (
     OUTPUT_DIM_LABELS,
     LAYOUT_LABELS,
     MATMUL_DIM_LABELS,
+    CONV2D_DIM_LABELS,
     MATMUL_LAYOUT_LABELS,
     SEGMENT_OFFSETS,
 )
@@ -241,9 +242,17 @@ def _is_matmul(op: str) -> bool:
     return op in ("matmul", "batchmatmul")
 
 
-def _get_op_dim_labels(ndim: int, is_matmul: bool) -> list[str]:
+
+def _is_conv(op: str) -> bool:
+    return op in ("depthwiseconv2dnative", "conv2d")
+
+
+def _get_op_dim_labels(ndim: int, is_matmul: bool, is_conv2d: bool) -> list[str]:
     if is_matmul:
         return MATMUL_DIM_LABELS[5 - ndim :]
+    elif is_conv2d:
+        return CONV2D_DIM_LABELS[6 - ndim :]
+
     return INPUT_DIM_LABELS[: ndim - 1] + OUTPUT_DIM_LABELS[:1]
 
 
@@ -254,9 +263,10 @@ def _create_sdsc_tensors(
     op_dim_order: list[Symbol],
     op_stick_dim: Symbol | None,
 ) -> tuple[list[SDSCArgs], dict, Symbol | None]:
+
     dims = list(iteration_space.keys())
     layouts: dict = {}
-    use_op_dims = not _is_matmul(op_spec.op)
+    use_op_dims = not _is_matmul(op_spec.op) and not _is_conv(op_spec.op)
 
     output_offset = 0
     gap = 0
@@ -354,7 +364,7 @@ def _create_sdsc_tensors(
 def _get_op_func(op: str, is_reduction: bool, output_scales: dict) -> str:
     if op == "to_dtype" or op == "overwrite":
         return IDENTITY_OP
-    if is_reduction and not _is_matmul(op) and -2 not in output_scales.values():
+    if is_reduction and not _is_matmul(op) and not _is_conv(op) and -2 not in output_scales.values():
         return op + "nonstick"
     return op
 
@@ -372,8 +382,10 @@ def _ref_arg(op_spec):
 
 def parse_op_spec(op_spec: OpSpec) -> SDSCSpec:
     is_matmul = _is_matmul(op_spec.op)
+    is_conv2d = _is_conv(op_spec.op)
     ndim = len(op_spec.iteration_space)
-    dim_labels = _get_op_dim_labels(ndim, is_matmul)
+    dim_labels = _get_op_dim_labels(ndim, is_matmul, is_conv2d)
+
 
     symbol_mapping = {
         sym: Symbol(dim_labels[i]) for i, sym in enumerate(op_spec.iteration_space)
@@ -401,6 +413,7 @@ def parse_op_spec(op_spec: OpSpec) -> SDSCSpec:
 
     ref_arg = _ref_arg(op_spec)
     op_dim_order, op_stick_dim = _get_device_dim_order(ref_arg, symbol_mapping)
+
 
     if op_stick_dim is None:
         stick_sym = Symbol(INPUT_DIM_LABELS[ndim])

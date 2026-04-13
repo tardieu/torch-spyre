@@ -36,6 +36,7 @@ from .constants import (
     BATCH_MATMUL_OP,
     IDENTITY_OP,
     RESTICKIFY_OP,
+    DEPTHWISE_CONV2D_OP,
 )
 from .errors import Unsupported
 from .ir import FixedTiledLayout
@@ -341,6 +342,7 @@ class SpyreKernel(Kernel[CSEVariable]):
         args: Sequence[TensorArg],
         op_info: dict[str, Any],
     ) -> OpSpec:
+
         for arg in args:
             if arg.device_dtype == DataFormats.IEEE_FP32 and op not in SPYRE_FP32_OPS:
                 raise Unsupported(f"{op} on {arg.device_dtype}")
@@ -358,6 +360,7 @@ class SpyreKernel(Kernel[CSEVariable]):
         it_space_extended = {
             k: (v, core_division.get(k, 1)) for k, v in it_space.items()
         }
+
 
         return OpSpec(
             op,
@@ -503,6 +506,21 @@ class SpyreKernel(Kernel[CSEVariable]):
                 self.create_tensor_arg(False, real_dst_name, dst),
             ]
             self.op_specs.append(self.create_op_spec(value.op, True, args, op_info))
+        elif value.op == DEPTHWISE_CONV2D_OP:
+            if (
+                len(value.arguments)  < 2
+                or (not isinstance(value.arguments[0], TensorAccess))
+                or (not isinstance(value.arguments[1], TensorAccess))
+            ):
+                raise Unsupported(f"invalid bdepthwiseconv2dnative arguments {value.arguments}")
+            x = value.arguments[0]
+            w = value.arguments[1]
+            args = [
+                self.create_tensor_arg(True, x.name, x),
+                self.create_tensor_arg(True, w.name, w),
+                self.create_tensor_arg(False, real_dst_name, dst),
+            ]
+            self.op_specs.append(self.create_op_spec(value.op, True, args, op_info))
         else:
             # All other reductions have exactly one input which is a tensor
             if (not len(value.arguments) == 1) or (
@@ -518,6 +536,7 @@ class SpyreKernel(Kernel[CSEVariable]):
 
     def codegen_kernel(self):
         """Codegen the body of this kernel by pretty printing its list of OpSpecs"""
+
 
         for op_spec in self.op_specs:
             simplify_op_spec(op_spec)

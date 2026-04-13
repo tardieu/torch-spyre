@@ -61,7 +61,16 @@ def iteration_space(n: SchedulerNode) -> dict[sympy.Symbol, sympy.Expr]:
         # The iteration space of a Pointwise is that of its output
         return next(iter(n.read_writes.writes)).ranges.copy()
     elif isinstance(n.node.data, Reduction):
-        # The iteration space of a Reduction is that of its input
-        return next(iter(n.read_writes.reads)).ranges.copy()
+        for i, dep in enumerate(n.read_writes.reads):
+           if isinstance(dep, MemoryDep):
+              print(f"Read {i}: {list(dep.ranges.keys())}")
+
+        # Combine ranges from all reads to capture the full iteration space
+        result = {}
+        for dep in n.read_writes.reads:
+            if isinstance(dep, MemoryDep):
+                result.update(dep.ranges)
+        return result
+        #return next(iter(n.read_writes.reads)).ranges.copy()
     else:
         raise Unsupported("Unexpected node type")

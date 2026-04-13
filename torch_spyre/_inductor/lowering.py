@@ -22,7 +22,7 @@ import torch._inductor.lowering as lowering
 
 from typing import Any, Callable, Union
 
-from .constants import MATMUL_REDUCTION_OP, BATCH_MATMUL_OP
+from .constants import MATMUL_REDUCTION_OP, BATCH_MATMUL_OP, DEPTHWISE_CONV2D_OP
 import torch_spyre._inductor.customops  # noqa: F401
 from torch_spyre.ops.fallbacks import fallback_ops
 from .ir import SpyreReduction
@@ -334,6 +334,71 @@ def lower_bmm(x, y):
         )
 
     return result
+
+
+@register_spyre_lowering(torch.ops.aten.convolution.default)
+def lower_convolution(x, w, bias, stride, padding, dilation, transposed, output_padding, groups):
+    print(f"In lower_convolution: Passed in values: x: {x} w: {w}")
+    x = V.graph.get_buffer(x.realize())
+    w = V.graph.get_buffer(w.realize())
+
+    x_loader = x.make_loader()
+    w_loader = w.make_loader()
+
+    # Input / weight shapes
+    N, C_in, H_in, W_in = x.get_size()
+    C_out, _, K_h, K_w = w.get_size()
+    print(f"In lower_convolution: N: {N} C_in: {C_in} H_in: {H_in} W_in: {W_in} C_out: {C_out} K_h: {K_h} K_w: {K_w}")
+
+    assert C_out == C_in
+    assert groups == C_in
+
+    # Output spatial sizes
+    H_out = (H_in + 2 * padding[0] - K_h) // stride[0] + 1
+    W_out = (W_in + 2 * padding[1] - K_w) // stride[1] + 1
+
+    def inner_fn(index, reduction_index):
+        # Output indices
+        n, c, ho, wo = index
+        # Reduction indices
+        kh, kw = reduction_index
+
+        # Compute input coordinates
+        hi = ho * stride[0] + kh - padding[0]
+        wi = wo * stride[1] + kw - padding[1]
+
+        #x_val = x_loader([n, c, hi, wi])
+        x_val = x_loader([n, c, ho, wo])
+        '''
+        x_val = ops.where(
+            ops.logical_and(
+                ops.logical_and(hi >= 0, hi < H_in),
+                ops.logical_and(wi >= 0, wi < W_in),
+            ),
+            x_loader([n, c, hi, wi]),
+            ops.constant(0, x.get_dtype()),
+        )
+        '''
+
+        # Depthwise filter: one filter per input channel
+        w_val = w_loader([c, 0, kh, kw])
+
+        return (x_val,w_val)
+
+    result = Reduction.create(
+        reduction_type=DEPTHWISE_CONV2D_OP,
+        input_node=[x, w],
+        device=x.get_device(),
+        dst_dtype=x.get_dtype(),
+        src_dtype=x.get_dtype(),
+        inner_fn=inner_fn,
+        ranges=[N, C_out, H_out, W_out],
+        reduction_ranges=[K_h, K_w],
+    )
+
+    result.realize()
+    return result
+
 
 
 @register_spyre_lowering(torch.ops.spyre.exx2)
