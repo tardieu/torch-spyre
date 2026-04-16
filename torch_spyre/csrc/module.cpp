@@ -25,7 +25,7 @@
 
 #include <cstdlib>  // std::getenv
 #include <flex/compiler_interface/dee_graph_converter.hpp>
-#include <flex/runtime/flex_factory.hpp>
+#include <flex/runtime_graph/flex_factory.hpp>
 #include <memory>
 #include <sendnn/graph.hpp>
 #include <sendnn/graph/graph_builder.hpp>
@@ -40,6 +40,8 @@
 
 #include "logging.h"
 #include "spyre_allocator.h"
+#include "spyre_device_enum.h"
+#include "spyre_guard.h"
 #include "spyre_mem.h"
 #include "spyre_sendnn_utils.h"
 #include "spyre_stream.h"
@@ -73,13 +75,36 @@ static void init_from_env() {
 
 void _startRuntime() {
   DEBUGINFO("starting runtime");
+  // Determine logical device index with priority:
+  //   1. tls_idx (non-zero) — set via explicit set_device() call
+  //   2. LOCAL_RANK env var — set by torchrun per process
+  //   3. 0 — single-device / non-torchrun default
+  int logical_device_id = 0;
+  int tls_idx = static_cast<int>(SpyreGuardImpl::tls_idx);
+  if (tls_idx != 0) {
+    logical_device_id = tls_idx;
+  } else if (const char *lr = std::getenv("LOCAL_RANK")) {
+    logical_device_id = std::atoi(lr);
+  }
+  ensureSpyreDevicesEnv();
+
+  const auto &devices = getVisibleDevices();
+  if (logical_device_id >= 0 &&
+      logical_device_id < static_cast<int>(devices.size())) {
+    DEBUGINFO("logical_device_id =", logical_device_id,
+              "-> PCI bus ID =", devices[logical_device_id].pci_bus_id);
+  }
+
   std::shared_ptr<Runtime> runtime;
-  auto s = flex::initializeRuntime(&runtime);
+  auto s = flex::initializeRuntime(&runtime, logical_device_id);
   init_from_env();
   if (runtime) {
     GlobalRuntime::set(runtime);
     DEBUGINFO(s);
-    DEBUGINFO("runtime started");
+    std::string env_key = "AIU_WORLD_RANK_" + std::to_string(logical_device_id);
+    const char *pci = std::getenv(env_key.c_str());
+    DEBUGINFO("runtime started, device PCI bus ID:",
+              pci ? pci : "(default/senlib)");
   } else {
     DEBUGINFO("runtime FAILED TO START.");
     throw std::runtime_error("Failed to initialize Spyre runtime. ");
@@ -162,49 +187,33 @@ void launchKernel(std::string g2_path, std::vector<at::Tensor> args) {
     at::Tensor tmp_0;
     if (arg.dim() == 0) {
       tmp_0 = (at::ones({1}, arg.dtype()) * arg).to(arg.device());
-      auto tensor = createInputTensor(gl, tmp_0.storage().data_ptr().get(), i,
-                                      (args.size() >= 3) ? 2 : 1);
+      auto tensor =
+          createInputTensor(gl, tmp_0.storage().data_ptr().get(), i, 1);
       tensor.SetSpyreData(static_cast<SharedOwnerCtx *>(
                               tmp_0.storage().data_ptr().get_context())
                               ->owner);
       sen_inputs.push_back(tensor);
     } else {
-      auto tensor = createInputTensor(gl, arg.storage().data_ptr().get(), i,
-                                      (args.size() >= 3) ? 2 : 1);
+      auto tensor = createInputTensor(gl, arg.storage().data_ptr().get(), i, 1);
       tensor.SetSpyreData(
           static_cast<SharedOwnerCtx *>(arg.storage().data_ptr().get_context())
               ->owner);
       sen_inputs.push_back(tensor);
     }
   }
-  auto tensor = createOutputTensor(gl, args.back().storage().data_ptr().get(),
-                                   0, (args.size() >= 3) ? 2 : 1);
+  auto tensor =
+      createOutputTensor(gl, args.back().storage().data_ptr().get(), 0, 1);
   tensor.SetSpyreData(static_cast<SharedOwnerCtx *>(
                           args.back().storage().data_ptr().get_context())
                           ->owner);
   sen_outputs.push_back(tensor);
 
   // Execute device init
-  if (args.size() == 6) {
-    // Filling in segment 5 adds another input to the device init supernode
-    status =
-        gl.Predict(sendnn::Outputs(), {sen_inputs[1], sen_outputs.front()}, 1);
-    if (!status.IsOk()) throw std::runtime_error(status.Message());
-    status = gl.Compute(sen_outputs, sen_inputs, 2);
-    if (!status.IsOk()) throw std::runtime_error(status.Message());
-  } else if (args.size() >= 3) {
-    status = gl.Predict(sendnn::Outputs(), {sen_inputs[1]}, 1);
-    if (!status.IsOk()) throw std::runtime_error(status.Message());
+  status = gl.Predict(sendnn::Outputs(), sendnn::Inputs(), 0);
+  if (!status.IsOk()) throw std::runtime_error(status.Message());
 
-    status = gl.Compute(sen_outputs, sen_inputs, 2);
-    if (!status.IsOk()) throw std::runtime_error(status.Message());
-  } else {
-    status = gl.Predict(sendnn::Outputs(), sendnn::Inputs(), 0);
-    if (!status.IsOk()) throw std::runtime_error(status.Message());
-
-    status = gl.Compute(sen_outputs, sen_inputs, 1);
-    if (!status.IsOk()) throw std::runtime_error(status.Message());
-  }
+  status = gl.Compute(sen_outputs, sen_inputs, 1);
+  if (!status.IsOk()) throw std::runtime_error(status.Message());
 
   return;
 }
@@ -243,9 +252,8 @@ bool is_supported_dtype(c10::ScalarType dtype) {
   return sen_dtype_dev != DataFormats::INVALID &&
          elems_per_stick(sen_dtype_dev) > 0;
 }
-// TODO(tmhoangt): add real code
 int device_count() {
-  return 1;
+  return getVisibleDeviceCount();
 }
 
 }  // namespace spyre
@@ -384,4 +392,18 @@ PYBIND11_MODULE(_C, m) {
                std::to_string(stream.device().index()) +
                " id=" + std::to_string(stream.id()) + ">";
       });
+  m.def("set_device", [](int idx) {
+    int count = spyre::device_count();
+    TORCH_CHECK(idx >= 0 && idx < count, "Device index ", idx,
+                " out of range [0, ", count, ")");
+    c10::impl::getDeviceGuardImpl(c10::DeviceType::PrivateUse1)
+        ->setDevice(c10::Device(c10::DeviceType::PrivateUse1,
+                                static_cast<c10::DeviceIndex>(idx)));
+  });
+  m.def("current_device", []() {
+    return c10::impl::getDeviceGuardImpl(c10::DeviceType::PrivateUse1)
+        ->getDevice()
+        .index();
+  });
+  m.def("device_count", &spyre::device_count);
 }
