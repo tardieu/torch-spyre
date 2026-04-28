@@ -39,9 +39,11 @@ from . import config
 from .stickify import propagate_mutation_layouts, propagate_spyre_tensor_layouts
 from .insert_restickify import insert_restickify
 from .core_division import core_division_planning
+from .pass_utils import apply_splits_from_index_coeff, iteration_space_from_op
 from .scratchpad import scratchpad_planning
 from .fusion import spyre_fuse_nodes
 from .constants import DEVICE_NAME
+from .deadcode_elimination import deadcode_elimination
 
 
 logger = get_inductor_logger("passes")
@@ -56,8 +58,14 @@ def _format_operations(operations: list[Operation]) -> str:
             if allocation := getattr(op.layout, "allocation", None):
                 buf.write(f"\n  allocation={allocation}")
             if splits := getattr(op, "op_it_space_splits", None):
-                buf.write(f"\n  op_it_space_splits={splits}")
-                buf.write(f"\n  op_it_space_sizes={op.op_it_space_sizes}")
+                rw = op.get_read_writes()
+                write_index = next(iter(rw.writes)).index
+                read_index = next((d.index for d in rw.reads), write_index)
+                it_space = iteration_space_from_op(op)
+                readable_splits = apply_splits_from_index_coeff(
+                    splits, write_index, read_index, it_space
+                )
+                buf.write(f"\n  op_it_space_splits={readable_splits}")
             buf.write(f"\n  {op.data}")
         buf.write("\n\n")
     return buf.getvalue()
@@ -81,7 +89,7 @@ class CustomPreGradPasses:
     pre-grad FX graph.
     """
 
-    passes: List[Callable[[torch.fx.graph.Graph], None]] = [insert_padding]
+    passes: List[Callable[[torch.fx.graph.Graph], None]] = []
 
     def __call__(self, graph: torch.fx.graph.Graph) -> None:
         for p in self.passes:
@@ -119,6 +127,7 @@ class CustomPostPasses(CustomGraphPass):
     The list of custom passes to run
     """
     passes: List[Callable[[torch.fx.graph.Graph], None]] = [
+        insert_padding,
         replace_scalar_with_tensor,
         mm_to_bmm_pass.apply,
         bmm_unflatten_pass.apply,
@@ -210,6 +219,7 @@ class CustomPreSchedulingPasses(CustomGraphPass):
         if logger.isEnabledFor(logging.INFO):
             logger.info("BEFORE PRE-SCHEDULING\n%s", _format_operations(operations))
 
+        deadcode_elimination(operations)
         propagate_spyre_tensor_layouts(operations)
         insert_restickify(operations)
         core_division_planning(operations)
@@ -221,6 +231,7 @@ class CustomPreSchedulingPasses(CustomGraphPass):
 
     def uuid(self) -> Optional[Any]:
         files = [
+            inspect.getfile(deadcode_elimination),
             inspect.getfile(propagate_spyre_tensor_layouts),
             inspect.getfile(insert_restickify),
             inspect.getfile(core_division_planning),
