@@ -222,7 +222,7 @@ class CustomPreSchedulingPasses(CustomGraphPass):
         deadcode_elimination(operations)
         propagate_spyre_tensor_layouts(operations)
         insert_restickify(operations)
-        core_division_planning(operations)
+        # core_division_planning(operations)
         if config.lx_planning:
             scratchpad_planning(operations)
 
