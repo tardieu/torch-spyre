@@ -38,6 +38,8 @@ beyond.
 To explicitly control working set reduction, we name tensor dimensions and tile
 them.
 
+## Example 1: Naming Dimensions and Tiling
+
 ```python
 M, K, N = 64, 256, 128
 
@@ -85,6 +87,9 @@ def kernel(x, y, z):
 
 Named tensor dimensions must be provided for inputs to `torch.compile` but are
 intended to be derived most of the time for computed tensors.
+
+
+## Example 2: View-Based Dimension Splitting
 
 Named tensor dimensions are intended to reflect the tensor layout in memory. For
 instance, the following code is valid:
@@ -153,7 +158,24 @@ topological sorting.
 Hints on LLIR operations are derived from origin FX nodes on demand via a getter
 method (`get_op_hints`).
 
-TODO: named dimensions propagation
+Named tensor dimensions are specified only on input tensors. To use these names for optimization 
+throughout the PyTorch graph, they must be propagated to intermediate tensors produced by operations. 
+This requires propagating dimension name metadata through the Inductor intermediate representation.
+This is implemented by the `propagate_named_dims` pass.
+
+In most cases, tracking dimension names through operations is straightforward. The primary complexity comes from 
+handling views, particularly views that split or combine dimensions, as shown in [Example 2](#example-view-based-dimension-splitting).
+
+The current implementation assumes that when a view splits a dimension, the input tensor’s corresponding dimension 
+already contains the necessary number of dimension names with compatible sizes (for example, `["M", "K"]` in Example 2). 
+Named dimensions are propagated through intermediate tensors and aligned to tensor dimensions using stride-based analysis, 
+ensuring correctness under view transformations.
+
+
+More automated dimension naming is planned. In the current implementation, if an input dimension is unnamed, or if a 
+view transformation is inconsistent with the user-provided dimension names, a warning is emitted and propagation 
+continues with partial or inferred information.
+
 
 ### Transformation
 
