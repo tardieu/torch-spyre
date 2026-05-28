@@ -30,7 +30,8 @@ from torch._inductor.ir import (
 from torch._inductor.dependencies import MemoryDep
 from torch._inductor.virtualized import V
 from .errors import Unsupported
-from .pass_utils import host_coordinates, device_coordinates
+from .pass_utils import SpyreConstantFallback, host_coordinates, device_coordinates
+from .propagate_hints import get_op_hints
 from .views import matching_dim, compute_coordinates
 from torch_spyre._C import SpyreTensorLayout
 from torch.utils.weak import WeakTensorKeyDictionary
@@ -323,6 +324,21 @@ def propagate_named_dims(
         elif isinstance(op, ComputedBuffer):
             if isinstance(op.layout, MutationLayoutSHOULDREMOVE):
                 continue
+            hint = False
+            for v in get_op_hints(op).values():
+                if "named_dims" in v:
+                    op.reduction_named_dims = None
+                    op.named_dims = v["named_dims"]
+                    hint = True
+                    break
+            if hint:
+                coords = op_out_coords(op)
+                op.loop_var_dims = {
+                    _lone_sym(k): v
+                    for k, v in zip(coords, op.named_dims)
+                    if len(k.free_symbols) == 1
+                }
+                continue
             origins: set = getattr(op.data, "origins", set())
             aten_ops = [str(n.target) for n in origins if hasattr(n, "target")]
             reduction_type = getattr(op.data, "reduction_type", None)
@@ -342,6 +358,8 @@ def propagate_named_dims(
             else:
                 logger.warning(f"Warning: unhandled node type {type(op.data)}")
                 _set_no_named_dims(op)
+        elif isinstance(op, SpyreConstantFallback):
+            _set_no_named_dims(op)
         else:
             logger.warning(f"unhandled operation type {type(op)}")
             _set_no_named_dims(op)
