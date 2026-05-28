@@ -334,7 +334,7 @@ def propagate_named_dims(
             if hint:
                 coords = op_out_coords(op)
                 op.loop_var_dims = {
-                    _lone_sym(k): v
+                    _lone_sym(k): [v]
                     for k, v in zip(coords, op.named_dims)
                     if len(k.free_symbols) == 1
                 }
