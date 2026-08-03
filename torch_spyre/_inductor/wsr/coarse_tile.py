@@ -187,7 +187,7 @@ def _clear_cache(obj: object, key: str) -> None:
 def plan_coarse_tile_groups(
     operations: list[Operation],
     groups: list[tuple],
-) -> dict[int, CoarseTileInfo]:
+) -> dict[str, CoarseTileInfo]:
     """Decide every op's coarse-tiling attributes without mutating the IR.
 
     Performs the per-op decision logic (hint-to-position lookup, per-level
@@ -198,20 +198,13 @@ def plan_coarse_tile_groups(
     _planned_tile_extents_per_level, reading op.data.ranges/reduction_ranges
     as they exist before any mutation.
 
-    Returns a dict mapping each tiled op's ``id(op)`` to its planned
-    CoarseTileInfo. Keyed by ``id(op)`` rather than ``op`` itself because
-    ir.Operation/ComputedBuffer are (unsafe_hash=False, eq=True) dataclasses
-    -- Python therefore sets their __hash__ to None, so they cannot be used
-    directly as dict keys (confirmed: ``{ComputedBuffer(...): 1}`` raises
-    ``TypeError: unhashable type``). ``id(op)`` still gives exact identity
-    semantics (the same object passed in via ``groups``, unmodified), and
-    matches the existing ``{id(op): ...}`` convention already used for
-    op-identity dicts elsewhere in this codebase (see
-    ``torch_spyre/_inductor/passes.py``'s ``op_order`` dicts).
+    Returns a dict mapping each tiled buffer name (``op.get_name()``) to its
+    planned CoarseTileInfo. Inductor guarantees buffer names are unique, so
+    they serve as stable, readable keys without requiring hashable op objects.
 
     Untiled/skipped ops (non-ComputedBuffer) have no entry.
     """
-    plan: dict[int, CoarseTileInfo] = {}
+    plan: dict[str, CoarseTileInfo] = {}
     for group_idx, (group_ops, levels) in enumerate(groups):
         group_id: tuple[int, ...] = (group_idx,)
         nested_group_id: tuple[int, ...] = group_id + (0,) * (len(levels) - 1)
@@ -282,7 +275,7 @@ def plan_coarse_tile_groups(
                 else []
             )
 
-            plan[id(op)] = CoarseTileInfo(
+            plan[op.get_name()] = CoarseTileInfo(
                 loop_group_id=nested_group_id,
                 loop_count=counts,
                 loop_tiled_dims=op_tiled_dims,
@@ -998,15 +991,15 @@ def _apply_plan(
     stamped_group_id: tuple[int, ...],
     levels: list[tuple],
     op_to_position: dict[str, int],
-    plan: dict[int, CoarseTileInfo],
+    plan: dict[str, CoarseTileInfo],
 ) -> dict[str, _RetiledBufferInfo]:
     """Apply planning's decisions: divide ranges and stamp loop_info.
 
     This is transformation's mutation step. All decisions (which
     dims/reduction levels are tiled, per CoarseTileInfo.tiled_dims_per_read /
     output_tiled_dims) already exist in
-    `plan` (keyed by id(op) -- Operation/ComputedBuffer are unhashable, see
-    plan_coarse_tile_groups) -- this function only performs the IR mutation
+    `plan` (keyed by op.get_name() -- see plan_coarse_tile_groups) -- this
+    function only performs the IR mutation
     _divide_ranges/_divide_reduction_ranges and the loop_info attribute
     assignment, using the plan's values instead of recomputing them.
 
@@ -1027,7 +1020,7 @@ def _apply_plan(
     for op in ops:
         if not isinstance(op, ComputedBuffer):
             continue
-        info = plan.get(id(op))
+        info = plan.get(op.get_name())
         if info is None:
             continue
 
