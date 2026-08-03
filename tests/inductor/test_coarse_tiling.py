@@ -79,7 +79,6 @@ from torch_spyre._inductor.wsr.coarse_tile import (
     _divide_ranges,
     _full_buffer_read_deps,
     _insert_read_copy_ops,
-    _replace_group_op,
     _rescale_index,
     _retile_load_index_from_strides,
     _should_patch_retiled_load_indexes,
@@ -901,29 +900,6 @@ class TestShouldPatchRetiledLoadIndexes(unittest.TestCase):
         self.assertTrue(result)
 
 
-class TestReplaceGroupOp(unittest.TestCase):
-    """Unit tests for keeping coarse-tile group op references current."""
-
-    def test_replaces_by_identity(self):
-        old_op = _make_op(_make_pointwise([4]), "old")
-        new_op = _make_op(_make_pointwise([4]), "new")
-        group_ops = [old_op]
-
-        _replace_group_op(group_ops, old_op, new_op)
-
-        self.assertIs(group_ops[0], new_op)
-
-    def test_replaces_by_operation_name_when_identity_changed(self):
-        stale_op = _make_op(_make_pointwise([4]), "old")
-        current_op = _make_op(_make_pointwise([4]), "old")
-        new_op = _make_op(_make_pointwise([4]), "new")
-        group_ops = [stale_op]
-
-        _replace_group_op(group_ops, current_op, new_op)
-
-        self.assertIs(group_ops[0], new_op)
-
-
 # ===========================================================================
 # 1. LoopSpec data structure and codegen serialization
 # ===========================================================================
@@ -1439,7 +1415,7 @@ class TestCoarseTile(unittest.TestCase):
         op_computed = _make_hinted_op(data, "op0", hints=((0, 0),))
         coarse_tile(
             _graph([op_extern, op_computed]),
-            [([op_extern, op_computed], [(0, Integer(2))])],
+            [([op_computed.get_name()], [(0, Integer(2))])],
         )
         self.assertEqual(op_computed.loop_info.loop_group_id, (0,))
         self.assertEqual(data.ranges[0], Integer(8))
@@ -1449,7 +1425,7 @@ class TestCoarseTile(unittest.TestCase):
         n = Symbol("N", positive=True)
         data = _make_pointwise([n])
         op = _make_hinted_op(data, "op0", hints=((0, 0),))
-        coarse_tile(_graph([op]), [([op], [(0, k)])])
+        coarse_tile(_graph([op]), [([op.get_name()], [(0, k)])])
         self.assertEqual(op.loop_info.loop_count, [k])
         self.assertEqual(simplify(data.ranges[0] - n / k), 0)
 
@@ -1461,7 +1437,10 @@ class TestCoarseTile(unittest.TestCase):
         op1 = _make_hinted_op(d1, "op1", hints=((0, 0),))
         op2 = _make_hinted_op(d2, "op2", hints=((0, 0),))
         with self.assertRaises(RuntimeError):
-            coarse_tile(_graph([op0, op1, op2]), [([op0, op2], [(0, Integer(4))])])
+            coarse_tile(
+                _graph([op0, op1, op2]),
+                [([op0.get_name(), op2.get_name()], [(0, Integer(4))])],
+            )
 
     def test_op_not_in_operations_raises(self):
         data = _make_pointwise([Integer(32)])
@@ -1470,7 +1449,9 @@ class TestCoarseTile(unittest.TestCase):
             _make_pointwise([Integer(8)]), "unknown", hints=((0, 0),)
         )
         with self.assertRaises(RuntimeError):
-            coarse_tile(_graph([op_known]), [([op_unknown], [(0, Integer(2))])])
+            coarse_tile(
+                _graph([op_known]), [([op_unknown.get_name()], [(0, Integer(2))])]
+            )
 
 
 class TestCoarseTileNested(unittest.TestCase):
@@ -1489,7 +1470,9 @@ class TestCoarseTileNested(unittest.TestCase):
     def test_nested_spec_stamps_list_attributes(self):
         data = _make_pointwise([Integer(256), Integer(128)])
         op = _make_hinted_op(data, "op0", hints=((1, 0), (2, 1)))
-        coarse_tile(_graph([op]), [([op], [(1, Integer(4)), (2, Integer(2))])])
+        coarse_tile(
+            _graph([op]), [([op.get_name()], [(1, Integer(4)), (2, Integer(2))])]
+        )
         self.assertEqual(op.loop_info.loop_group_id, (0, 0))
         self.assertEqual(op.loop_info.loop_count, [Integer(4), Integer(2)])
         self.assertEqual(op.loop_info.loop_tiled_dims, [[0], [1]])
@@ -1497,14 +1480,18 @@ class TestCoarseTileNested(unittest.TestCase):
     def test_nested_spec_divides_ranges_both_levels(self):
         data = _make_pointwise([Integer(256), Integer(128)])
         op = _make_hinted_op(data, "op0", hints=((1, 0), (2, 1)))
-        coarse_tile(_graph([op]), [([op], [(1, Integer(4)), (2, Integer(2))])])
+        coarse_tile(
+            _graph([op]), [([op.get_name()], [(1, Integer(4)), (2, Integer(2))])]
+        )
         self.assertEqual(data.ranges[0], Integer(64))
         self.assertEqual(data.ranges[1], Integer(64))
 
     def test_nested_spec_outer_only_divides_outer_dim(self):
         data = _make_pointwise([Integer(32), Integer(64), Integer(16)])
         op = _make_hinted_op(data, "op0", hints=((1, 0), (2, 1)))
-        coarse_tile(_graph([op]), [([op], [(1, Integer(4)), (2, Integer(8))])])
+        coarse_tile(
+            _graph([op]), [([op.get_name()], [(1, Integer(4)), (2, Integer(8))])]
+        )
         self.assertEqual(data.ranges[0], Integer(8))
         self.assertEqual(data.ranges[1], Integer(8))
         self.assertEqual(data.ranges[2], Integer(16))
@@ -1518,8 +1505,8 @@ class TestCoarseTileNested(unittest.TestCase):
         coarse_tile(
             _graph([op0, op1]),
             [
-                ([op0], [(1, Integer(4))]),
-                ([op1], [(2, Integer(4)), (3, Integer(2))]),
+                ([op0.get_name()], [(1, Integer(4))]),
+                ([op1.get_name()], [(2, Integer(4)), (3, Integer(2))]),
             ],
         )
         self.assertEqual(op0.loop_info.loop_group_id, (0,))
@@ -1536,7 +1523,9 @@ class TestCoarseTileNested(unittest.TestCase):
     def test_nested_same_dim_different_counts(self):
         data = _make_pointwise([Integer(256)])
         op = _make_hinted_op(data, "op0", hints=((1, 0), (2, 0)))
-        coarse_tile(_graph([op]), [([op], [(1, Integer(4)), (2, Integer(2))])])
+        coarse_tile(
+            _graph([op]), [([op.get_name()], [(1, Integer(4)), (2, Integer(2))])]
+        )
         self.assertEqual(data.ranges[0], Integer(32))
         self.assertEqual(op.loop_info.loop_count, [Integer(4), Integer(2)])
         self.assertEqual(op.loop_info.loop_tiled_dims, [[0], [0]])
@@ -1572,21 +1561,20 @@ class TestCoarseTileNested(unittest.TestCase):
         zero-mutation test plus this test's confirmation that stamping still
         happens by the time coarse_tile() returns.
         """
-        from torch._inductor.ir import ComputedBuffer
 
         d0 = _make_pointwise([Integer(64), Integer(32)])
         d1 = _make_pointwise([Integer(128), Integer(64)])
         op0 = _make_hinted_op(d0, "op0", hints=((1, 0),))
         op1 = _make_hinted_op(d1, "op1", hints=((2, 0), (3, 1)))
-        groups = [
-            ([op0], [(1, Integer(4))]),
-            ([op1], [(2, Integer(4)), (3, Integer(2))]),
-        ]
-        coarse_tile(_graph([op0, op1]), groups)
-        for group_ops, _ in groups:
-            for op in group_ops:
-                if isinstance(op, ComputedBuffer):
-                    self.assertIsNotNone(getattr(op, "loop_info", None))
+        coarse_tile(
+            _graph([op0, op1]),
+            [
+                ([op0.get_name()], [(1, Integer(4))]),
+                ([op1.get_name()], [(2, Integer(4)), (3, Integer(2))]),
+            ],
+        )
+        for op in (op0, op1):
+            self.assertIsNotNone(getattr(op, "loop_info", None))
 
 
 class TestCoarseTileTiledDimsPerRead(unittest.TestCase):
@@ -1646,7 +1634,7 @@ class TestCoarseTileTiledDimsPerRead(unittest.TestCase):
             hints=((1, 0), (2, 1)),
         )
         levels = [(1, Integer(2)), (2, Integer(4))]
-        plan = plan_coarse_tile_groups([op], [([op], levels)])
+        plan = plan_coarse_tile_groups([op], [([op.get_name()], levels)])
         _apply_plan([op], (0, 0), levels, {op.get_operation_name(): 0}, plan)
         # Output: dim 0 tiled at level 0 (K=2 outer, extent 512 = 1024/2);
         # dim 1 tiled at level 1 (M=4 inner, extent 1024 = 4096/4). Neither
@@ -1677,7 +1665,7 @@ class TestCoarseTileTiledDimsPerRead(unittest.TestCase):
             hints=((1, 0), (2, 1)),
         )
         levels = [(1, Integer(2)), (2, Integer(4))]
-        plan = plan_coarse_tile_groups([op], [([op], levels)])
+        plan = plan_coarse_tile_groups([op], [([op.get_name()], levels)])
         _apply_plan([op], (0, 0), levels, {op.get_operation_name(): 0}, plan)
         broadcast_tiled_dims = op.loop_info.tiled_dims_per_read[1]
         # Broadcast along dim 0 (stride 0): b's index never depends on d0,
@@ -1701,7 +1689,7 @@ class TestCoarseTileTiledDimsPerRead(unittest.TestCase):
             hints=((1, 0), (2, 1)),
         )
         levels = [(1, Integer(2)), (2, Integer(4))]
-        plan = plan_coarse_tile_groups([op], [([op], levels)])
+        plan = plan_coarse_tile_groups([op], [([op.get_name()], levels)])
         _apply_plan([op], (0, 0), levels, {op.get_operation_name(): 0}, plan)
         # Input's read index is 16*d0 + d1: d0 (output dim 0, extent 4 --
         # 8 rows / K=2 outer steps) tiled at level 0; d1 (reduction dim,
@@ -1727,7 +1715,7 @@ class TestCoarseTileTiledDimsPerRead(unittest.TestCase):
             hints=((1, 0), (2, 2)),
         )
         levels = [(1, Integer(2)), (2, Integer(4))]
-        plan = plan_coarse_tile_groups([op], [([op], levels)])
+        plan = plan_coarse_tile_groups([op], [([op.get_name()], levels)])
         _apply_plan([op], (0, 0), levels, {op.get_operation_name(): 0}, plan)
         # Level 0 (hint 1, count=2) tiles dim 0, extent 4 (8 rows / 2 steps);
         # level 1 (hint 2, count=4) tiles dim 2, extent 8 (32 cols / 4
@@ -1760,7 +1748,7 @@ class TestCoarseTileTiledDimsPerRead(unittest.TestCase):
             hints=((1, 0), (2, 1)),
         )
         levels = [(1, Integer(2)), (2, Integer(4))]
-        plan = plan_coarse_tile_groups([op], [([op], levels)])
+        plan = plan_coarse_tile_groups([op], [([op.get_name()], levels)])
         _apply_plan([op], (0, 0), levels, {op.get_operation_name(): 0}, plan)
         expected = [[(0, Integer(512))], [(1, Integer(1024))]]
         self.assertEqual(len(op.loop_info.tiled_dims_per_read), 2)
@@ -1797,7 +1785,9 @@ class TestCoarseTileTiledDimsPerRead(unittest.TestCase):
         ]
         pre_loop_info = [getattr(o, "loop_info", None) for o in group_ops]
 
-        plan = plan_coarse_tile_groups(group_ops, [(group_ops, levels)])
+        plan = plan_coarse_tile_groups(
+            group_ops, [([op.get_name() for op in group_ops], levels)]
+        )
 
         post_ranges = [
             tuple(o.data.ranges) for o in group_ops if isinstance(o, ComputedBuffer)
@@ -1805,11 +1795,10 @@ class TestCoarseTileTiledDimsPerRead(unittest.TestCase):
         post_loop_info = [getattr(o, "loop_info", None) for o in group_ops]
         self.assertEqual(pre_ranges, post_ranges)
         self.assertEqual(pre_loop_info, post_loop_info)
-        # plan is keyed by id(op), not op itself: ir.Operation/ComputedBuffer
-        # are (eq=True, unsafe_hash=False) dataclasses, so Python sets their
-        # __hash__ to None and they cannot be used as dict keys directly.
         self.assertTrue(
-            all(id(o) in plan for o in group_ops if isinstance(o, ComputedBuffer))
+            all(
+                o.get_name() in plan for o in group_ops if isinstance(o, ComputedBuffer)
+            )
         )
 
     def test_plan_raises_unsupported_when_reduction_tiling_disabled(self):
@@ -1836,7 +1825,9 @@ class TestCoarseTileTiledDimsPerRead(unittest.TestCase):
             with self.assertRaisesRegex(
                 Unsupported, "disabled via enable_reduction_tiling"
             ):
-                plan_coarse_tile_groups(group_ops, [(group_ops, levels)])
+                plan_coarse_tile_groups(
+                    group_ops, [([op.get_name() for op in group_ops], levels)]
+                )
 
     def test_plan_raises_unsupported_for_carry(self):
         """Planning raises Unsupported for an op requiring carry propagation.
@@ -1934,7 +1925,9 @@ class TestCoarseTileTiledDimsPerRead(unittest.TestCase):
         levels = [(1, Integer(4))]
 
         with self.assertRaisesRegex(Unsupported, "requiring carry propagation"):
-            plan_coarse_tile_groups(group_ops, [(group_ops, levels)])
+            plan_coarse_tile_groups(
+                group_ops, [([op.get_name() for op in group_ops], levels)]
+            )
 
 
 def _make_fixed_flag_op(
@@ -6376,7 +6369,10 @@ def _run_htctg_and_capture_log(ops):
     from torch_spyre._inductor.wsr.coarse_tile_hints import hints_to_coarse_tile_groups
     import torch_spyre._inductor.wsr.coarse_tile_hints as coarse_tile_hints_mod
 
-    graph = SimpleNamespace(operations=list(ops))
+    graph = SimpleNamespace(
+        operations=list(ops),
+        name_to_buffer={op.get_name(): op for op in ops},
+    )
 
     # Temporarily force the module-level hints_logger to INFO so the logging
     # block inside hints_to_coarse_tile_groups actually runs.

@@ -315,19 +315,19 @@ def span_overflow_groups(
             )
         ]
 
-        group_ops: list[Operation] = []
+        group_buffer_names: list[str] = []
         for grouped_op, dims in current_group:
             dim_hint_assignments.append(
                 (grouped_op, _dims_to_hints(grouped_op, dims, hint_ids))
             )
-            group_ops.append(grouped_op)
+            group_buffer_names.append(grouped_op.get_name())
             auto_tiled_producers.add(grouped_op.get_name())
 
-        groups.append((group_ops, levels))
+        groups.append((group_buffer_names, levels))
         logger.debug(
             "[span-overflow groups] created group_index=%d ops=%s levels=%s",
             len(groups) - 1,
-            [op.get_name() for op in group_ops],
+            group_buffer_names,
             levels,
         )
         current_group = []
@@ -549,7 +549,7 @@ def span_overflow_groups(
                 hint_ids, signature
             )
         ]
-        groups.append(([op], levels))
+        groups.append(([op.get_name()], levels))
         auto_tiled_producers.add(op.get_name())
         logger.debug(
             "[span-overflow groups] created group_index=%d op=%s levels=%s",

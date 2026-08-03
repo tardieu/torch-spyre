@@ -280,7 +280,7 @@ def hints_to_coarse_tile_groups(graph: GraphLowering) -> list[tuple]:
         if current_ops and current_key is not None:
             levels = _hints_levels(current_ops)
             if levels:
-                groups.append((current_ops, levels))
+                groups.append(([op.get_name() for op in current_ops], levels))
             else:
                 hints_logger.warning(
                     "spyre_hint on [%s]: no op iterates over the hinted dimension "
@@ -308,17 +308,18 @@ def hints_to_coarse_tile_groups(graph: GraphLowering) -> list[tuple]:
     if hints_logger.isEnabledFor(logging.INFO):
         # Build an interleaved view: walk operations in order, emit group boundaries
         # and ungrouped ops so the reader can see what breaks each consecutive run.
-        grouped_to_group_idx = {id(o): i for i, g in enumerate(groups) for o in g[0]}
+        grouped_to_group_idx = {name: i for i, g in enumerate(groups) for name in g[0]}
         # Pre-compute hint descriptions per group — get_op_hints is called once per
         # group rather than once per op in the group.
         group_hint_descs: dict[int, str] = {}
-        for g_idx, (group_ops, _group_levels) in enumerate(groups):
+        for g_idx, (group_buffer_names, _group_levels) in enumerate(groups):
             # Collect all DimHints across the group, keyed by hint_id.
             # Prefer a hint whose loop_var is not None (op actually iterates
             # that dim) over a broadcast hint (loop_var=None), so that the
             # representative name/count reflects a real iteration.
             best: dict[int, "DimHint"] = {}
-            for gop in group_ops:
+            for gname in group_buffer_names:
+                gop = graph.name_to_buffer.get(gname)
                 for h in getattr(gop, "dim_hints", []):
                     if h.hint_id not in best or best[h.hint_id].loop_var is None:
                         best[h.hint_id] = h
@@ -336,7 +337,7 @@ def hints_to_coarse_tile_groups(graph: GraphLowering) -> list[tuple]:
         for o in operations:
             if not isinstance(o, ComputedBuffer):
                 continue
-            op_group_idx = grouped_to_group_idx.get(id(o))
+            op_group_idx = grouped_to_group_idx.get(o.get_name())
             if op_group_idx is None:
                 hints = getattr(o, "dim_hints", [])
                 if hints:

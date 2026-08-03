@@ -32,7 +32,7 @@ except ImportError:
 
 
 from torch._inductor.graph import GraphLowering
-from torch._inductor.ir import Operation
+from torch._inductor.ir import ComputedBuffer, Operation
 from torch._inductor.scheduler import BaseSchedulerNode
 
 from .logging_utils import get_inductor_logger
@@ -334,8 +334,12 @@ def _maybe_coarse_tile_hints(graph: GraphLowering) -> None:
     groups = hints_to_coarse_tile_groups(graph)
     if not groups:
         return
-    op_order = {id(op): idx for idx, op in enumerate(graph.operations)}
-    groups.sort(key=lambda group: op_order.get(id(group[0][0]), len(op_order)))
+    op_order = {
+        op.get_name(): idx
+        for idx, op in enumerate(graph.operations)
+        if isinstance(op, ComputedBuffer)
+    }
+    groups.sort(key=lambda group: op_order.get(group[0][0], len(op_order)))
     validate_coarse_tile_groups(groups)
     coarse_tile(graph, groups=groups)
 
@@ -373,8 +377,12 @@ def _maybe_coarse_tile_span_overflow(graph: GraphLowering) -> None:
         if hasattr(op, "loop_info") and op.loop_info is not None
     ]
     group_idx_offset = max(used_ids, default=-1) + 1
-    op_order = {id(op): idx for idx, op in enumerate(graph.operations)}
-    groups.sort(key=lambda group: op_order.get(id(group[0][0]), len(op_order)))
+    op_order = {
+        op.get_name(): idx
+        for idx, op in enumerate(graph.operations)
+        if isinstance(op, ComputedBuffer)
+    }
+    groups.sort(key=lambda group: op_order.get(group[0][0], len(op_order)))
     validate_coarse_tile_groups(groups)
     coarse_tile(graph, groups=groups, group_idx_offset=group_idx_offset)
 

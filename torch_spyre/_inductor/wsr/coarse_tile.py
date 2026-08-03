@@ -121,9 +121,10 @@ def validate_coarse_tile_groups(groups: list[tuple]) -> None:
     different tiles in an unsynchronized fashion.
     """
     hint_id_to_group: dict[int, int] = {}
-    for group_idx, (group_ops, _levels) in enumerate(groups):
+    for group_idx, (group_buffer_names, _levels) in enumerate(groups):
         group_hint_ids: set[int] = set()
-        for op in group_ops:
+        for buf_name in group_buffer_names:
+            op = V.graph.name_to_buffer.get(buf_name)
             for h in getattr(op, "dim_hints", []):
                 group_hint_ids.add(h.hint_id)
         for hint_id in group_hint_ids:
@@ -187,7 +188,7 @@ def _clear_cache(obj: object, key: str) -> None:
 def plan_coarse_tile_groups(
     operations: list[Operation],
     groups: list[tuple],
-) -> dict[int, CoarseTileInfo]:
+) -> dict[str, CoarseTileInfo]:
     """Decide every op's coarse-tiling attributes without mutating the IR.
 
     Performs the per-op decision logic (hint-to-position lookup, per-level
@@ -198,24 +199,24 @@ def plan_coarse_tile_groups(
     _planned_tile_extents_per_level, reading op.data.ranges/reduction_ranges
     as they exist before any mutation.
 
-    Returns a dict mapping each tiled op's ``id(op)`` to its planned
-    CoarseTileInfo. Keyed by ``id(op)`` rather than ``op`` itself because
-    ir.Operation/ComputedBuffer are (unsafe_hash=False, eq=True) dataclasses
-    -- Python therefore sets their __hash__ to None, so they cannot be used
-    directly as dict keys (confirmed: ``{ComputedBuffer(...): 1}`` raises
-    ``TypeError: unhashable type``). ``id(op)`` still gives exact identity
-    semantics (the same object passed in via ``groups``, unmodified), and
-    matches the existing ``{id(op): ...}`` convention already used for
-    op-identity dicts elsewhere in this codebase (see
-    ``torch_spyre/_inductor/passes.py``'s ``op_order`` dicts).
+    Returns a dict mapping each tiled op's buffer name (``op.get_name()``) to
+    its planned CoarseTileInfo. Groups only ever contain ComputedBuffers, and
+    ``replace_computed_buffer_body`` preserves ``name``, so the buffer name is
+    stable across IR rewrites and safe as a dict key.
 
     Untiled/skipped ops (non-ComputedBuffer) have no entry.
     """
-    plan: dict[int, CoarseTileInfo] = {}
-    for group_idx, (group_ops, levels) in enumerate(groups):
+    name_to_buf: dict[str, ComputedBuffer] = {
+        op.get_name(): op for op in operations if isinstance(op, ComputedBuffer)
+    }
+    plan: dict[str, CoarseTileInfo] = {}
+    for group_idx, (group_buffer_names, levels) in enumerate(groups):
         group_id: tuple[int, ...] = (group_idx,)
         nested_group_id: tuple[int, ...] = group_id + (0,) * (len(levels) - 1)
         counts = [count for _, count in levels]
+        group_ops: list[Operation] = [
+            name_to_buf[n] for n in group_buffer_names if n in name_to_buf
+        ]
         group_reduction_tiled_levels = _group_reduction_tiled_levels_in_group(
             group_ops, levels
         )
@@ -282,7 +283,7 @@ def plan_coarse_tile_groups(
                 else []
             )
 
-            plan[id(op)] = CoarseTileInfo(
+            plan[op.get_name()] = CoarseTileInfo(
                 loop_group_id=nested_group_id,
                 loop_count=counts,
                 loop_tiled_dims=op_tiled_dims,
@@ -998,15 +999,15 @@ def _apply_plan(
     stamped_group_id: tuple[int, ...],
     levels: list[tuple],
     op_to_position: dict[str, int],
-    plan: dict[int, CoarseTileInfo],
+    plan: dict[str, CoarseTileInfo],
 ) -> dict[str, _RetiledBufferInfo]:
     """Apply planning's decisions: divide ranges and stamp loop_info.
 
     This is transformation's mutation step. All decisions (which
     dims/reduction levels are tiled, per CoarseTileInfo.tiled_dims_per_read /
     output_tiled_dims) already exist in
-    `plan` (keyed by id(op) -- Operation/ComputedBuffer are unhashable, see
-    plan_coarse_tile_groups) -- this function only performs the IR mutation
+    `plan` (keyed by op.get_name() -- see plan_coarse_tile_groups) -- this
+    function only performs the IR mutation
     _divide_ranges/_divide_reduction_ranges and the loop_info attribute
     assignment, using the plan's values instead of recomputing them.
 
@@ -1027,7 +1028,7 @@ def _apply_plan(
     for op in ops:
         if not isinstance(op, ComputedBuffer):
             continue
-        info = plan.get(id(op))
+        info = plan.get(op.get_name())
         if info is None:
             continue
 
@@ -1427,29 +1428,84 @@ def coarse_tile(
     plan = plan_coarse_tile_groups(operations, groups)
 
     # Transformation: apply the plan. Only reached if planning didn't raise.
+    def _buf_name_to_op(
+        name_to_buf: dict[str, ComputedBuffer], buf_name: str
+    ) -> Operation | None:
+        op = name_to_buf.get(buf_name)
+        if op is None:
+            try:
+                op = V.graph.name_to_buffer.get(buf_name)
+            except Exception:
+                pass
+        return op
+
+    def _resolve_group(
+        group_buffer_names: list[str],
+        name_to_buf: dict[str, ComputedBuffer],
+        op_to_position: dict[str, int],
+        group_id: tuple[int, ...] | None = None,
+    ) -> list[Operation]:
+        result = []
+        for buf_name in group_buffer_names:
+            op = _buf_name_to_op(name_to_buf, buf_name)
+            if op is None:
+                raise RuntimeError(
+                    f"coarse_tile: buffer {buf_name!r} (group {group_id}) "
+                    "is not in the operations list"
+                )
+            op_name = op.get_operation_name()
+            if op_name not in op_to_position:
+                raise RuntimeError(
+                    f"coarse_tile: operation {op_name!r} for buffer {buf_name!r} "
+                    f"(group {group_id}) is not in the operations list"
+                )
+            result.append(operations[op_to_position[op_name]])
+        return result
+
     op_to_position: dict[str, int] = {
         op.get_operation_name(): i for i, op in enumerate(operations)
     }
+    name_to_buf: dict[str, ComputedBuffer] = {
+        op.get_name(): op for op in operations if isinstance(op, ComputedBuffer)
+    }
     retiled_infos_by_group: list[
-        tuple[tuple[int, ...], list[Operation], dict[str, _RetiledBufferInfo]]
+        tuple[tuple[int, ...], list[str], dict[str, _RetiledBufferInfo]]
     ] = []
-    for group_idx, (group_ops, levels) in enumerate(groups, start=group_idx_offset):
+    for group_idx, (group_buffer_names, levels) in enumerate(
+        groups, start=group_idx_offset
+    ):
         group_id: tuple[int, ...] = (group_idx,)
+        group_ops = _resolve_group(
+            group_buffer_names, name_to_buf, op_to_position, group_id
+        )
         name_map = _replace_constant_fill_predecessors(
             group_ops, levels, operations, group_id
         )
         op_to_position = {op.get_operation_name(): i for i, op in enumerate(operations)}
+        name_to_buf = {
+            op.get_name(): op for op in operations if isinstance(op, ComputedBuffer)
+        }
+        group_ops = _resolve_group(
+            group_buffer_names, name_to_buf, op_to_position, group_id
+        )
         stamped_group_id = group_id + (0,) * (len(levels) - 1)
         retiled_infos = _apply_plan(
             group_ops, stamped_group_id, levels, op_to_position, plan
         )
         _apply_fill_name_swap(group_ops, name_map, operations)
-        retiled_infos_by_group.append((stamped_group_id, group_ops, retiled_infos))
+        retiled_infos_by_group.append(
+            (stamped_group_id, group_buffer_names, retiled_infos)
+        )
 
     insert_tiling_propagation(operations, groups)
     _zero_fixed_tile_advance_exprs(operations)
 
-    for group_id, group_ops, retiled_infos in retiled_infos_by_group:
+    op_to_position = {op.get_operation_name(): i for i, op in enumerate(operations)}
+    name_to_buf = {
+        op.get_name(): op for op in operations if isinstance(op, ComputedBuffer)
+    }
+    for group_id, group_buffer_names, retiled_infos in retiled_infos_by_group:
+        group_ops = _resolve_group(group_buffer_names, name_to_buf, op_to_position)
         _patch_retiled_load_indexes(group_id, group_ops, retiled_infos, operations)
 
 
@@ -1526,35 +1582,31 @@ def insert_tiling_propagation(
     bundle.py handles the per-iteration address offset for both the tiled
     op and the inserted copy op.
     """
-    for group_ops, _ in groups:
-        for idx, op in enumerate(group_ops):
+    name_to_pos = {
+        op.get_name(): i
+        for i, op in enumerate(operations)
+        if isinstance(op, ComputedBuffer)
+    }
+    for group_buffer_names, _ in groups:
+        for buf_name in group_buffer_names:
+            pos = name_to_pos.get(buf_name)
+            if pos is None:
+                continue
+            op = operations[pos]
             if not isinstance(op, ComputedBuffer):
                 continue
             if not isinstance(op.data, (Pointwise, Reduction)):
                 continue
             _propagate_tiled_op(op, operations)
-            # _propagate_tiled_op (and the copy-op insertion it may
-            # delegate to) can replace op with a new ComputedBuffer object
-            # spliced into `operations` under the same name (see
-            # replace_computed_buffer_body).  group_ops is a separate list
-            # snapshotted before this loop runs, so it must be kept in sync
-            # here — otherwise a later pass reading group_ops (e.g.
-            # _patch_retiled_load_indexes) sees the stale pre-rewrite object
-            # and clobbers the rewrite when it reconstructs from it.  Look
-            # up the current object in `operations` itself (already the
-            # authoritative post-replacement list) rather than V.graph --
-            # this pass runs from CustomPreSchedulingPasses, and unit tests
-            # that call coarse_tile() directly never install a real V.graph.
-            current = next(
-                (
-                    o
-                    for o in operations
-                    if isinstance(o, ComputedBuffer) and o.get_name() == op.get_name()
-                ),
-                None,
-            )
-            if current is not None and current is not op:
-                group_ops[idx] = current
+            # _propagate_tiled_op may replace op with a new ComputedBuffer
+            # under the same buffer name via replace_computed_buffer_body.
+            # Re-index so the next buf_name lookup in this group finds the
+            # current object, not the stale pre-rewrite one.
+            name_to_pos = {
+                o.get_name(): i
+                for i, o in enumerate(operations)
+                if isinstance(o, ComputedBuffer)
+            }
 
 
 def _validate_reduction_tiling(op: ComputedBuffer) -> None:
@@ -3186,17 +3238,6 @@ def _should_patch_retiled_load_indexes(
     return any(_reads_buffer(op, name) for name in retiled_names)
 
 
-def _replace_group_op(
-    group_ops: list[Operation], old_op: Operation, new_op: Operation
-) -> None:
-    """Keep the tiling group list in sync after replacing a ComputedBuffer body."""
-    old_name = old_op.get_operation_name()
-    for idx, group_op in enumerate(group_ops):
-        if group_op is old_op or group_op.get_operation_name() == old_name:
-            group_ops[idx] = new_op
-            return
-
-
 def _patch_retiled_load_indexes(
     group_id: tuple[int, ...],
     group_ops: list[Operation],
@@ -3239,7 +3280,6 @@ def _patch_retiled_load_indexes(
             pass_name="coarse_tile",
             reason="rewrite retiled load indexes",
         )
-        _replace_group_op(group_ops, op, new_op)
         V.graph.name_to_buffer[new_op.get_name()] = new_op
 
 
