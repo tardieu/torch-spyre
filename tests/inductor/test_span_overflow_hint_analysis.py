@@ -228,7 +228,7 @@ def _manual_h_hint_group(op, hint_id=1, split_count=_E2E_SPLIT_COUNT):
         hint_id=hint_id,
     )
     op.dim_hints = [hint]
-    return [([op], [(hint_id, sympy.Integer(split_count))])]
+    return [([op.get_name()], [(hint_id, sympy.Integer(split_count))])]
 
 
 def _scheduler_node_for_op(op, name):
@@ -271,7 +271,7 @@ class TestSpanOverflowGroups(InductorTestCase):
             groups = _run_span_overflow_groups(op)
 
         self.assertEqual(len(groups), 1)
-        self.assertIs(groups[0][0][0], op)
+        self.assertEqual(groups[0][0][0], op.get_name())
 
     def test_overflow_reduction_output_returns_one_group(self):
         op = _reduction_op(_E2E_SHAPE)
@@ -280,7 +280,7 @@ class TestSpanOverflowGroups(InductorTestCase):
             groups = _run_span_overflow_groups(op)
 
         self.assertEqual(len(groups), 1)
-        self.assertIs(groups[0][0][0], op)
+        self.assertEqual(groups[0][0][0], op.get_name())
         self.assertFalse(op.dim_hints[0].is_reduction)
 
     def test_scalar_reduction_skipped(self):
@@ -299,7 +299,7 @@ class TestSpanOverflowGroups(InductorTestCase):
 
         self.assertEqual(len(groups), 1)
         ops_list, levels = groups[0]
-        self.assertEqual(ops_list, [op])
+        self.assertEqual(ops_list, [op.get_name()])
         self.assertEqual(len(levels), 1)
         hint_id, count = levels[0]
         self.assertEqual(hint_id, _SPAN_OVERFLOW_HINT_ID)
@@ -319,7 +319,7 @@ class TestSpanOverflowGroups(InductorTestCase):
                 groups = _apply_span_overflow(_graph([op0, op1]))
 
         self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0][0], [op0, op1])
+        self.assertEqual(groups[0][0], [op0.get_name(), op1.get_name()])
         self.assertEqual(groups[0][1][0][0], _SPAN_OVERFLOW_HINT_ID)
         self.assertEqual(op0.dim_hints[0].hint_id, _SPAN_OVERFLOW_HINT_ID)
         self.assertEqual(op1.dim_hints[0].hint_id, _SPAN_OVERFLOW_HINT_ID)
@@ -353,7 +353,7 @@ class TestSpanOverflowGroups(InductorTestCase):
                 groups = _apply_span_overflow(_graph([op0, op1]))
 
         self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0][0], [op0, op1])
+        self.assertEqual(groups[0][0], [op0.get_name(), op1.get_name()])
         self.assertEqual(op0.dim_hints[0].hint_id, op1.dim_hints[0].hint_id)
 
     def _chained_pointwise_ops(self, shape1=_E2E_SHAPE):
@@ -425,7 +425,7 @@ class TestSpanOverflowGroups(InductorTestCase):
             groups = _apply_span_overflow(_graph([op0, op1]))
 
         self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0][0], [op0, op1])
+        self.assertEqual(groups[0][0], [op0.get_name(), op1.get_name()])
         self.assertEqual(op0.dim_hints[0].hint_id, op1.dim_hints[0].hint_id)
         # op1 adopted op0's split (5), not its own independently-searched one (11).
         self.assertEqual(op0.dim_hints[0].split_count, 5)
@@ -488,7 +488,7 @@ class TestSpanOverflowGroups(InductorTestCase):
             groups = _apply_span_overflow(_graph([producer, matmul]))
 
         self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0][0], [producer, matmul])
+        self.assertEqual(groups[0][0], [producer.get_name(), matmul.get_name()])
         # Synchronized: shared hint_id and split, each on its own loop_var.
         self.assertEqual(producer.dim_hints[0].hint_id, matmul.dim_hints[0].hint_id)
         self.assertEqual(producer.dim_hints[0].split_count, 5)
@@ -613,7 +613,7 @@ class TestSpanOverflowGroups(InductorTestCase):
             groups = _apply_span_overflow(_graph([producer, reduction]))
 
         self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0][0], [producer, reduction])
+        self.assertEqual(groups[0][0], [producer.get_name(), reduction.get_name()])
         self.assertEqual(producer.dim_hints[0].hint_id, reduction.dim_hints[0].hint_id)
         self.assertEqual(producer.dim_hints[0].split_count, 5)
         self.assertEqual(reduction.dim_hints[0].split_count, 5)
@@ -947,7 +947,9 @@ class TestSpanOverflowGroups(InductorTestCase):
 
         # One synchronized group containing the weight producer and the matmul.
         self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0][0], [restickify_weight, lm_head_bmm])
+        self.assertEqual(
+            groups[0][0], [restickify_weight.get_name(), lm_head_bmm.get_name()]
+        )
         self.assertEqual(
             restickify_weight.dim_hints[0].hint_id, lm_head_bmm.dim_hints[0].hint_id
         )
@@ -1074,7 +1076,7 @@ class TestSpanOverflowGroups(InductorTestCase):
                 groups = _apply_span_overflow(_graph([hinted_op, unhinted_op]))
 
         self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0][0], [unhinted_op])
+        self.assertEqual(groups[0][0], [unhinted_op.get_name()])
         self.assertEqual(getattr(hinted_op, "dim_hints")[0].hint_id, 1)
 
     def test_ignore_wsr_hints_config_suppresses_groups(self):
@@ -1693,7 +1695,7 @@ class TestSpanOverflowPointwisePlannerAndAdapter(InductorTestCase):
 
         self.assertEqual(len(groups), 1)
         group_ops, levels = groups[0]
-        self.assertEqual(group_ops, [op])
+        self.assertEqual(group_ops, [op.get_name()])
         self.assertEqual(levels[0][1], sympy.Integer(_E2E_SPLIT_COUNT))
         self.assertEqual(len(op.dim_hints), 1)
         self.assertEqual(op.dim_hints[0].split_count, _E2E_SPLIT_COUNT)
