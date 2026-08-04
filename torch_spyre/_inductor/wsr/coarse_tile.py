@@ -1122,11 +1122,11 @@ def coarse_tile(
         )
         retiled_infos_by_group.append((stamped_group_id, group_ops, retiled_infos))
 
-    insert_tiling_propagation(operations, groups)
-    _zero_fixed_tile_advance_exprs(operations)
-
     for group_id, group_ops, retiled_infos in retiled_infos_by_group:
         _patch_retiled_load_indexes(group_id, group_ops, retiled_infos, operations)
+
+    insert_tiling_propagation(operations, groups)
+    _zero_fixed_tile_advance_exprs(operations)
 
 
 def _zero_fixed_tile_advance_exprs(operations: list[Operation]) -> None:
