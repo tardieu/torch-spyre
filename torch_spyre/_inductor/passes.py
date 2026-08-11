@@ -462,10 +462,7 @@ def validate_index(index, var_ranges):
         var = term_vars[0]
         assert var not in vars_found
         vars_found.add(var)
-        if isinstance(term, ModularIndexing):
-            assert term.args[0] == var
-            atoms.append((sympy.S.One, var, term.args[1], term.args[2]))
-            continue
+        assert not isinstance(term, ModularIndexing)
         if term == var:
             atoms.append((sympy.S.One, var))
             continue
@@ -478,11 +475,7 @@ def validate_index(index, var_ranges):
                 assert not var_found
                 var_found = True
                 continue
-            if isinstance(arg, ModularIndexing):
-                assert arg.args[0] == var and not var_found
-                var_found = True
-                mi = [arg.args[1], arg.args[2]]
-                continue
+            assert not isinstance(arg, ModularIndexing)
             prod *= arg
         assert prod > 0
         atoms.append((prod, var, *mi))
