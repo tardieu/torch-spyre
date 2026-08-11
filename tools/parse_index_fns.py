@@ -8,6 +8,7 @@ Usage:
 Always writes stack traces to index_stacks.txt in the current directory.
 Grep that file for an ex= key shown in the histogram to find its source.
 """
+
 from __future__ import annotations
 
 import ast
@@ -32,6 +33,7 @@ import sympy
 #   _has_tmp(expr)            -> bool
 #   _expected_strides(ranges) -> list[int] row-major strides for given ranges
 # ---------------------------------------------------------------------------
+
 
 def _coeffs(expr: sympy.Expr) -> list[int] | None:
     syms = sorted(expr.free_symbols, key=str)
@@ -73,6 +75,7 @@ def _is_permuted_row_major(check_coeffs: list[int], ranges: list[int]) -> bool:
     and checks if any permuted stride assignment matches check_coeffs.
     """
     from itertools import permutations
+
     n = len(ranges)
     for perm in permutations(range(n)):
         # perm[i] = which range index goes to memory position i
@@ -147,6 +150,7 @@ def _classify(expr: sympy.Expr, var_ranges: dict[str, int]) -> str:
 # Parsing
 # ---------------------------------------------------------------------------
 
+
 def parse_fn_line(line: str) -> tuple[str, str, sympy.Expr, dict[str, int]] | None:
     """Parse one SPYRE_INDEX_FN line.
 
@@ -156,7 +160,7 @@ def parse_fn_line(line: str) -> tuple[str, str, sympy.Expr, dict[str, int]] | No
     line = line.strip()
     if not line.startswith("SPYRE_INDEX_FN "):
         return None
-    rest = line[len("SPYRE_INDEX_FN "):]
+    rest = line[len("SPYRE_INDEX_FN ") :]
     parts = rest.split(None, 2)  # key, direction, remainder
     if len(parts) < 3:
         return None
@@ -186,7 +190,7 @@ def parse_stack_line(line: str) -> tuple[str, str] | None:
     line = line.strip()
     if not line.startswith("SPYRE_INDEX_STACK "):
         return None
-    rest = line[len("SPYRE_INDEX_STACK "):]
+    rest = line[len("SPYRE_INDEX_STACK ") :]
     if " | " not in rest:
         return None
     key, escaped = rest.split(" | ", 1)
@@ -197,6 +201,7 @@ def parse_stack_line(line: str) -> tuple[str, str] | None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     if len(sys.argv) > 1:
@@ -235,11 +240,17 @@ def main() -> None:
             examples[pair_key] = buf_key
 
     group_order = [
-        "scalar", "symbolic", "non-linear", "indirect",
+        "scalar",
+        "symbolic",
+        "non-linear",
+        "indirect",
         "single-dim",
-        "row-major", "row-major+missing-dim",
-        "col-major", "col-major+missing-dim",
-        "permuted", "permuted+missing-dim",
+        "row-major",
+        "row-major+missing-dim",
+        "col-major",
+        "col-major+missing-dim",
+        "permuted",
+        "permuted+missing-dim",
         "other",
     ]
 

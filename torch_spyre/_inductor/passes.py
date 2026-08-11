@@ -451,15 +451,12 @@ def log_index_functions(graph: GraphLowering) -> None:
 def validate_index(index, var_ranges):
     vars = set(var_ranges.keys())
     vars_found = set()
-    offset_found = False
+    offset = sympy.S.Zero
     atoms = []
     for term in index.as_ordered_terms():
         term_vars = list(set(term.free_symbols) & vars)
         if len(term_vars) == 0:
-            assert not offset_found
-            offset_found = True
-            assert term >= 0
-            atoms.append((term,))
+            offset += term
             continue
         assert len(term_vars) == 1
         var = term_vars[0]
@@ -489,6 +486,9 @@ def validate_index(index, var_ranges):
             prod *= arg
         assert prod > 0
         atoms.append((prod, var, *mi))
+    if offset != 0:
+        assert offset >= 0
+        atoms.append((offset,))
     print(index, "==>", atoms)
 
 
