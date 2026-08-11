@@ -100,6 +100,7 @@ from .dedup_constants import dedup_and_promote_constants
 from .wsr.coarse_tile import coarse_tile_post_stickify, coarse_tile_pre_stickify
 from .split_multi_ops import split_multi_ops, validate_ops
 
+from .errors import Unsupported
 
 logger = get_inductor_logger("passes")
 
@@ -458,31 +459,48 @@ def validate_index(index, var_ranges):
         if len(term_vars) == 0:
             offset += term
             continue
-        assert len(term_vars) == 1
+        if len(term_vars) != 1:
+            raise Unsupported(
+                f"index term {term} depends on multiple iteration variables {term_vars}"
+            )
         var = term_vars[0]
-        assert var not in vars_found
+        if var in vars_found:
+            raise Unsupported(
+                f"iteration variable {var} appears in multiple index terms"
+            )
         vars_found.add(var)
-        assert not isinstance(term, ModularIndexing)
+        if isinstance(term, ModularIndexing):
+            raise Unsupported(
+                f"ModularIndexing in index term {term} is not supported for tiling"
+            )
         if term == var:
             atoms.append((sympy.S.One, var))
             continue
-        assert term.func == sympy.Mul
+        if term.func != sympy.Mul:
+            raise Unsupported(f"index term {term} is not a linear monomial")
         prod = sympy.S.One
-        mi = []
         var_found = False
         for arg in term.args:
+            if isinstance(arg, ModularIndexing):
+                raise Unsupported(
+                    f"ModularIndexing in index term argument {arg} is not"
+                    " supported for tiling"
+                )
             if arg == var:
-                assert not var_found
+                if var_found:
+                    raise Unsupported(
+                        f"iteration variable {var} appears more than once in"
+                        f" term {term}"
+                    )
                 var_found = True
                 continue
-            assert not isinstance(arg, ModularIndexing)
             prod *= arg
-        assert prod > 0
-        atoms.append((prod, var, *mi))
-    if offset != 0:
-        assert offset >= 0
-        atoms.append((offset,))
-    print(index, "==>", atoms)
+        if not (prod > 0 and prod.is_integer):
+            raise Unsupported(f"index coefficient {prod} is not a positive integer")
+        atoms.append((prod, var))
+    if not (offset >= 0 and offset.is_integer):
+        raise Unsupported(f"index offset {offset} is not a non-negative integer")
+    print(index, "==>", atoms, offset)
 
 
 class CustomPreSchedulingPasses:
