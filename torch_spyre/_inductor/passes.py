@@ -25,6 +25,7 @@ import sympy
 import torch
 import torch.fx.graph
 from torch._inductor.custom_graph_pass import CustomGraphPass, get_hash_for_files
+from torch.utils._sympy.functions import ModularIndexing
 
 try:
     # valid for torch 2.13
@@ -421,7 +422,7 @@ def log_index_functions(graph: GraphLowering) -> None:
             continue
         name = op.get_name()
         rw = op.get_read_writes()
-        var_ranges = {str(k): int(v) for k, v in rw.var_ranges.items()}
+        var_ranges = {str(k): v for k, v in rw.var_ranges.items()}
         key = f"{_RUN_ID}:{name}"
         for dep in rw.reads:
             print(
@@ -430,6 +431,7 @@ def log_index_functions(graph: GraphLowering) -> None:
                 f" | {var_ranges}"
                 f" | {sympy.srepr(dep.index)}"
             )
+            validate_index(dep.index, rw.var_ranges)
         for dep in rw.writes:
             print(
                 f"SPYRE_INDEX_FN {key} write"
@@ -437,12 +439,57 @@ def log_index_functions(graph: GraphLowering) -> None:
                 f" | {var_ranges}"
                 f" | {sympy.srepr(dep.index)}"
             )
+            validate_index(dep.index, rw.var_ranges)
         # Emit stack trace line for source attribution
         origin = getattr(op, "origin_node", None)
         if origin is not None:
             stack = getattr(origin, "stack_trace", None) or ""
             escaped = stack.replace("\n", "\\n")
             print(f"SPYRE_INDEX_STACK {key} | {escaped}")
+
+
+def validate_index(index, var_ranges):
+    vars = set(var_ranges.keys())
+    vars_found = set()
+    offset_found = False
+    atoms = []
+    for term in index.as_ordered_terms():
+        term_vars = list(set(term.free_symbols) & vars)
+        if len(term_vars) == 0:
+            assert not offset_found
+            offset_found = True
+            assert term >= 0
+            atoms.append((term,))
+            continue
+        assert len(term_vars) == 1
+        var = term_vars[0]
+        assert var not in vars_found
+        vars_found.add(var)
+        if isinstance(term, ModularIndexing):
+            assert term.args[0] == var
+            atoms.append((sympy.S.One, var, term.args[1], term.args[2]))
+            continue
+        if term == var:
+            atoms.append((sympy.S.One, var))
+            continue
+        assert term.func == sympy.Mul
+        prod = sympy.S.One
+        mi = []
+        var_found = False
+        for arg in term.args:
+            if arg == var:
+                assert not var_found
+                var_found = True
+                continue
+            if isinstance(arg, ModularIndexing):
+                assert arg.args[0] == var and not var_found
+                var_found = True
+                mi = [arg.args[1], arg.args[2]]
+                continue
+            prod *= arg
+        assert prod > 0
+        atoms.append((prod, var, *mi))
+    print(index, "==>", atoms)
 
 
 class CustomPreSchedulingPasses:
