@@ -81,6 +81,7 @@ jobs:
       # Ack that the run was picked up. curl, not gh (not installed yet);
       # best-effort so a failed reaction never blocks the review.
       - name: Acknowledge trigger comment
+        if: github.event_name == 'issue_comment'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
