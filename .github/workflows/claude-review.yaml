@@ -43,11 +43,10 @@ jobs:
     #
     # No trailing delimiter after the command: a comment with notes on later
     # lines has CRLF (not a space) after it, and GHA literals can't encode it.
-    if: >-
-      github.event.issue.pull_request ||
-      github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '/claude-review') &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    # if: >-
+    #   github.event.issue.pull_request &&
+    #   startsWith(github.event.comment.body, '/claude-review') &&
+    #   contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     # The static review still runs on the self-hosted fleet (required for model
     # connectivity) but on the card-less pool (spyre_pf_x0), so it never
     # contends for an accelerator.
