@@ -44,8 +44,7 @@ jobs:
     # No trailing delimiter after the command: a comment with notes on later
     # lines has CRLF (not a space) after it, and GHA literals can't encode it.
     if: >-
-      github.event.issue.pull_request &&
-      github.event.pull_request.head.repo.full_name == github.repository ||
+      github.event.issue.pull_request ||
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/claude-review') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
