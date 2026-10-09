@@ -62,6 +62,7 @@ jobs:
       # Authoritative access gate (see the if: comment). curl, not gh -- gh is
       # installed further down. Rejects anything below write.
       - name: Verify commenter has write access
+        if: github.event_name == 'issue_comment'
         env:
           GH_TOKEN: ${{ github.token }}
           ACTOR: ${{ github.event.comment.user.login }}
