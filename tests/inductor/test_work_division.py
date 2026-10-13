@@ -2531,9 +2531,7 @@ class TestResidencyEdgeMatching(unittest.TestCase):
                 graph, division_is_fixed=False
             )
             allocator._validated_drain_plans = plans
-            built = allocator._build_cd_bound_buffers(
-                graph, {}, allocator_module._DivisionMap(divisions, set())
-            )
+            built = allocator._build_cd_bound_buffers(graph, {}, divisions)
             solver = allocator.layout_planning(built, allocator.size)
             solved = {b.name: b for b in solver.plan_layout()}
             # _commit_divisions would record the committed ownership here.
